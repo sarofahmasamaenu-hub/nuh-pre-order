@@ -711,23 +711,39 @@ export default function OrderForm({
                 {/* ประวัติและฟีดแบ็กเดิมของลูกค้า (Customer History & Feedback Lookup) */}
                 {pastCustomerOrders.length > 0 && (
                   <div className="p-3.5 bg-amber-50/60 border border-amber-200/50 rounded-xl space-y-3 mt-2 animate-fadeIn">
-                    <div className="flex items-center justify-between border-b border-amber-200/30 pb-2">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-amber-200/30 pb-2 gap-1.5">
                       <div className="flex items-center space-x-2 text-amber-950">
                         <History className="h-4 w-4 text-natural-clay" />
-                        <span className="text-xs font-bold font-serif">✨ ประวัติและ FEEDBACK ของลูกค้าท่านนี้ ({pastCustomerOrders.length} รายการ)</span>
+                        <span className="text-xs font-bold font-serif">✨ ประวัติออเดอร์ของผู้สั่งตัดเบอร์นี้ ({pastCustomerOrders.length} รายการ)</span>
                       </div>
-                      <span className="text-[9px] bg-natural-clay/10 text-natural-clay font-bold px-2 py-0.5 rounded-full">พบคลังข้อมูล</span>
+                      <div className="flex flex-wrap items-center gap-1.5 text-[9px] font-bold">
+                        <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full border border-blue-200">
+                          กำลังตัดเย็บ: {pastCustomerOrders.filter(o => o.status !== OrderStatus.READY && o.status !== OrderStatus.COMPLETED).length}
+                        </span>
+                        <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full border border-emerald-200">
+                          พร้อมส่ง: {pastCustomerOrders.filter(o => o.status === OrderStatus.READY).length}
+                        </span>
+                        <span className="bg-gray-100 text-gray-700 px-2 py-0.5 rounded-full border border-gray-200">
+                          สำเร็จแล้ว: {pastCustomerOrders.filter(o => o.status === OrderStatus.COMPLETED).length}
+                        </span>
+                      </div>
                     </div>
 
-                    <div className="space-y-2.5 max-h-48 overflow-y-auto pr-1 scrollbar-thin">
+                    <div className="space-y-2.5 max-h-56 overflow-y-auto pr-1 scrollbar-thin">
                       {pastCustomerOrders.map((past) => {
                         const m = past.measurements;
                         const feedbacks = past.feedbacks || [];
+                        const statusInfo = STATUS_MAP[past.status];
                         return (
                           <div key={past.id} className="bg-white p-2.5 rounded-lg border border-amber-200/30 shadow-3xs space-y-2">
-                            <div className="flex items-center justify-between text-[10px]">
-                              <span className="font-bold text-natural-espresso">ออเดอร์: <span className="font-mono text-xs">{past.orderNumber}</span> ({past.dressType})</span>
-                              <span className="text-natural-espresso/50 font-mono">{past.orderDate}</span>
+                            <div className="flex items-center justify-between text-[10px] gap-2">
+                              <span className="font-bold text-natural-espresso flex items-center gap-1.5 flex-wrap">
+                                <span>ออเดอร์: <span className="font-mono text-xs">{past.orderNumber}</span> ({past.dressType})</span>
+                                <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${statusInfo.colorClass}`}>
+                                  {statusInfo.label}
+                                </span>
+                              </span>
+                              <span className="text-natural-espresso/50 font-mono shrink-0">{past.orderDate}</span>
                             </div>
 
                             {/* Measurements Quick Preview */}

@@ -29,7 +29,10 @@ import {
   Camera,
   Trash2,
   Star,
-  Lock
+  Lock,
+  Copy,
+  Send,
+  ExternalLink
 } from 'lucide-react';
 import PrintOrderModal from './PrintOrderModal';
 import FeedbackSection from './FeedbackSection';
@@ -81,6 +84,8 @@ export default function CustomerPortal({
   const [profileAvatar, setProfileAvatar] = useState<string>('');
   const [showPrivileges, setShowPrivileges] = useState<boolean>(false);
   const [activeHistoryTab, setActiveHistoryTab] = useState<'all' | 'active' | 'completed'>('all');
+  const [selectedStatusFilter, setSelectedStatusFilter] = useState<string>('ALL');
+  const [copiedLineSummary, setCopiedLineSummary] = useState<boolean>(false);
 
   // Customer Profile Editing States
   const [isEditingProfile, setIsEditingProfile] = useState<boolean>(false);
@@ -763,8 +768,20 @@ export default function CustomerPortal({
               tierBadgeBg = 'bg-natural-espresso/10 text-natural-espresso border-natural-espresso/20';
             }
 
-            // Filter displayed list based on selection tab
+            // Calculate status breakdown for this customer's phone number
+            const statusBreakdown: Record<OrderStatus, number> = {
+              [OrderStatus.RECEIVED]: searchedOrders.filter(o => o.status === OrderStatus.RECEIVED).length,
+              [OrderStatus.DESIGNING]: searchedOrders.filter(o => o.status === OrderStatus.DESIGNING).length,
+              [OrderStatus.CUTTING]: searchedOrders.filter(o => o.status === OrderStatus.CUTTING).length,
+              [OrderStatus.SEWING]: searchedOrders.filter(o => o.status === OrderStatus.SEWING).length,
+              [OrderStatus.FITTING]: searchedOrders.filter(o => o.status === OrderStatus.FITTING).length,
+              [OrderStatus.READY]: searchedOrders.filter(o => o.status === OrderStatus.READY).length,
+              [OrderStatus.COMPLETED]: searchedOrders.filter(o => o.status === OrderStatus.COMPLETED).length,
+            };
+
+            // Filter displayed list based on selection tab & status filter
             const displayedOrders = searchedOrders.filter(order => {
+              if (selectedStatusFilter !== 'ALL' && order.status !== selectedStatusFilter) return false;
               if (activeHistoryTab === 'active') return order.status !== OrderStatus.COMPLETED;
               if (activeHistoryTab === 'completed') return order.status === OrderStatus.COMPLETED;
               return true;
@@ -941,6 +958,168 @@ export default function CustomerPortal({
                           </div>
                         </div>
                       </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 1.5 STATUS BREAKDOWN CARD BY PHONE NUMBER */}
+                <div className="bg-gradient-to-br from-[#faf8f5] via-white to-[#f5f2ea] p-5 sm:p-6 rounded-3xl border border-natural-wheat shadow-xs space-y-4">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-natural-sand pb-3">
+                    <div className="flex items-center space-x-2.5">
+                      <div className="p-2 bg-natural-clay/10 text-natural-clay rounded-xl border border-natural-clay/20">
+                        <Phone className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <h4 className="font-serif font-extrabold text-sm sm:text-base text-natural-espresso flex items-center gap-2">
+                          <span>สรุปสถานะออเดอร์เบอร์โทรศัพท์:</span>
+                          <span className="font-mono bg-natural-espresso text-natural-cream px-2 py-0.5 rounded text-xs font-bold">{cPhone || 'ไม่ระบุเบอร์'}</span>
+                        </h4>
+                        <p className="text-[11px] text-natural-espresso/60">
+                          พบคลิปออเดอร์สั่งตัดรวมทั้งหมด <strong className="text-natural-clay font-bold">{totalOrders} ออเดอร์</strong> (คลิกที่ปุ่มสถานะด้านล่างเพื่อกรองดูเฉพาะชุดในสถานะนั้นๆ ได้ค่ะ)
+                        </p>
+                      </div>
+                    </div>
+                    {selectedStatusFilter !== 'ALL' && (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedStatusFilter('ALL')}
+                        className="text-[11px] bg-natural-clay text-white font-bold px-3 py-1.5 rounded-xl hover:bg-natural-clay/90 transition-all cursor-pointer shadow-2xs flex items-center gap-1"
+                      >
+                        <X className="h-3 w-3" />
+                        <span>ล้างตัวกรอง (ดูทุกสถานะ)</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {/* STATUS GRID SUMMARY */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5 pt-1">
+                    {[
+                      { status: OrderStatus.RECEIVED, label: 'รับออเดอร์', icon: '📥', bg: 'bg-amber-500/10 border-amber-300 text-amber-900' },
+                      { status: OrderStatus.DESIGNING, label: 'เตรียมแบบ/ผ้า', icon: '🎨', bg: 'bg-orange-500/10 border-orange-300 text-orange-900' },
+                      { status: OrderStatus.CUTTING, label: 'ขึ้นแบบตัดผ้า', icon: '✂️', bg: 'bg-yellow-500/10 border-yellow-300 text-yellow-900' },
+                      { status: OrderStatus.SEWING, label: 'เย็บประกอบ', icon: '🪡', bg: 'bg-blue-500/10 border-blue-300 text-blue-900' },
+                      { status: OrderStatus.FITTING, label: 'ฟิตติ้งชุด', icon: '📐', bg: 'bg-purple-500/10 border-purple-300 text-purple-900' },
+                      { status: OrderStatus.READY, label: 'พร้อมส่งมอบ', icon: '✨', bg: 'bg-emerald-500/15 border-emerald-400 text-emerald-950 font-extrabold ring-1 ring-emerald-400/40' },
+                      { status: OrderStatus.COMPLETED, label: 'ส่งมอบสำเร็จ', icon: '🏁', bg: 'bg-gray-100 border-gray-300 text-gray-700' }
+                    ].map((item) => {
+                      const count = statusBreakdown[item.status as OrderStatus] || 0;
+                      const isSelected = selectedStatusFilter === item.status;
+                      return (
+                        <button
+                          key={item.status}
+                          type="button"
+                          onClick={() => {
+                            setSelectedStatusFilter(isSelected ? 'ALL' : item.status);
+                            setActiveHistoryTab('all');
+                          }}
+                          className={`p-2.5 rounded-2xl border text-left transition-all duration-200 flex flex-col justify-between cursor-pointer ${
+                            isSelected
+                              ? 'ring-2 ring-natural-clay shadow-sm scale-102 bg-white'
+                              : count > 0
+                              ? `${item.bg} hover:shadow-2xs`
+                              : 'bg-stone-50 text-stone-400 border-stone-200/60 opacity-60'
+                          }`}
+                        >
+                          <div className="flex justify-between items-center w-full mb-1">
+                            <span className="text-base">{item.icon}</span>
+                            <span className={`text-xs font-black px-2 py-0.5 rounded-full ${count > 0 ? 'bg-white/90 text-natural-espresso shadow-3xs' : 'bg-stone-200/50 text-stone-400'}`}>
+                              {count}
+                            </span>
+                          </div>
+                          <span className="text-[11px] font-bold line-clamp-1">{item.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* LINE ACTION BAR FOR SENDING SUMMARY VIA LINE */}
+                  <div className="pt-3 border-t border-natural-sand/60 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 bg-white/70 p-3 rounded-2xl border border-natural-wheat/60">
+                    <div className="flex items-center space-x-2 text-xs font-bold text-natural-espresso">
+                      <div className="w-7 h-7 rounded-lg bg-[#06C755] text-white flex items-center justify-center font-black text-sm shadow-2xs shrink-0">
+                        💬
+                      </div>
+                      <div>
+                        <span className="block font-bold text-emerald-900">แชร์รายงานสรุปเข้า LINE:</span>
+                        <span className="block text-[10px] text-natural-espresso/60 font-normal">แชร์สถานะออเดอร์ทั้งหมดของเบอร์ {cPhone} พร้อมลิงก์ติดตามแบบ Real-time 100%</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const portalUrl = `${window.location.origin}${window.location.pathname}?tab=customer&search=${encodeURIComponent(cPhone || '')}&mode=customer`;
+                          const summaryText = [
+                            `📲 สรุปสถานะงานสั่งตัด - NUNUH Atelier`,
+                            `----------------------------------`,
+                            `👤 คุณ: ${cName}`,
+                            `📱 เบอร์โทรศัพท์: ${cPhone || 'ไม่ระบุ'}`,
+                            `📦 จำนวนออเดอร์สั่งตัดรวม: ${totalOrders} รายการ`,
+                            ``,
+                            `📊 สรุปสถานะล่าสุด:`,
+                            statusBreakdown[OrderStatus.RECEIVED] > 0 ? `• 📥 รับออเดอร์แล้ว: ${statusBreakdown[OrderStatus.RECEIVED]} ชุด` : null,
+                            statusBreakdown[OrderStatus.DESIGNING] > 0 ? `• 🎨 เตรียมแบบ/ผ้า: ${statusBreakdown[OrderStatus.DESIGNING]} ชุด` : null,
+                            statusBreakdown[OrderStatus.CUTTING] > 0 ? `• ✂️ ขึ้นแบบตัดผ้า: ${statusBreakdown[OrderStatus.CUTTING]} ชุด` : null,
+                            statusBreakdown[OrderStatus.SEWING] > 0 ? `• 🪡 กำลังเย็บประกอบ: ${statusBreakdown[OrderStatus.SEWING]} ชุด` : null,
+                            statusBreakdown[OrderStatus.FITTING] > 0 ? `• 📐 รอ/กำลังฟิตติ้ง: ${statusBreakdown[OrderStatus.FITTING]} ชุด` : null,
+                            statusBreakdown[OrderStatus.READY] > 0 ? `• ✨ พร้อมส่งมอบแล้ว: ${statusBreakdown[OrderStatus.READY]} ชุด` : null,
+                            statusBreakdown[OrderStatus.COMPLETED] > 0 ? `• 🏁 ส่งมอบสำเร็จแล้ว: ${statusBreakdown[OrderStatus.COMPLETED]} ชุด` : null,
+                            ``,
+                            `🔍 ดูรูปภาพและติดตามสถานะล่าสุดออนไลน์ได้ที่:`,
+                            portalUrl
+                          ].filter(Boolean).join('\n');
+
+                          const lineUrl = `https://line.me/R/msg/text/?${encodeURIComponent(summaryText)}`;
+                          window.open(lineUrl, '_blank', 'noopener,noreferrer');
+                        }}
+                        className="flex-1 sm:flex-none text-xs bg-[#06C755] hover:bg-[#05b34c] text-white font-extrabold px-3.5 py-2 rounded-xl transition-all shadow-xs hover:shadow-md cursor-pointer flex items-center justify-center gap-1.5"
+                      >
+                        <Send className="h-3.5 w-3.5" />
+                        <span>แชร์เข้า LINE</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const portalUrl = `${window.location.origin}${window.location.pathname}?tab=customer&search=${encodeURIComponent(cPhone || '')}&mode=customer`;
+                          const summaryText = [
+                            `📲 สรุปสถานะงานสั่งตัด - NUNUH Atelier`,
+                            `----------------------------------`,
+                            `👤 คุณ: ${cName}`,
+                            `📱 เบอร์โทรศัพท์: ${cPhone || 'ไม่ระบุ'}`,
+                            `📦 จำนวนออเดอร์สั่งตัดรวม: ${totalOrders} รายการ`,
+                            ``,
+                            `📊 สรุปสถานะล่าสุด:`,
+                            statusBreakdown[OrderStatus.RECEIVED] > 0 ? `• 📥 รับออเดอร์แล้ว: ${statusBreakdown[OrderStatus.RECEIVED]} ชุด` : null,
+                            statusBreakdown[OrderStatus.DESIGNING] > 0 ? `• 🎨 เตรียมแบบ/ผ้า: ${statusBreakdown[OrderStatus.DESIGNING]} ชุด` : null,
+                            statusBreakdown[OrderStatus.CUTTING] > 0 ? `• ✂️ ขึ้นแบบตัดผ้า: ${statusBreakdown[OrderStatus.CUTTING]} ชุด` : null,
+                            statusBreakdown[OrderStatus.SEWING] > 0 ? `• 🪡 กำลังเย็บประกอบ: ${statusBreakdown[OrderStatus.SEWING]} ชุด` : null,
+                            statusBreakdown[OrderStatus.FITTING] > 0 ? `• 📐 รอ/กำลังฟิตติ้ง: ${statusBreakdown[OrderStatus.FITTING]} ชุด` : null,
+                            statusBreakdown[OrderStatus.READY] > 0 ? `• ✨ พร้อมส่งมอบแล้ว: ${statusBreakdown[OrderStatus.READY]} ชุด` : null,
+                            statusBreakdown[OrderStatus.COMPLETED] > 0 ? `• 🏁 ส่งมอบสำเร็จแล้ว: ${statusBreakdown[OrderStatus.COMPLETED]} ชุด` : null,
+                            ``,
+                            `🔍 ดูรูปภาพและติดตามสถานะล่าสุดออนไลน์ได้ที่:`,
+                            portalUrl
+                          ].filter(Boolean).join('\n');
+
+                          try {
+                            await navigator.clipboard.writeText(summaryText);
+                          } catch {
+                            const ta = document.createElement('textarea');
+                            ta.value = summaryText;
+                            document.body.appendChild(ta);
+                            ta.select();
+                            document.execCommand('copy');
+                            document.body.removeChild(ta);
+                          }
+                          setCopiedLineSummary(true);
+                          setTimeout(() => setCopiedLineSummary(false), 3000);
+                        }}
+                        className="flex-1 sm:flex-none text-xs bg-white hover:bg-stone-50 text-natural-espresso border border-natural-sand font-bold px-3.5 py-2 rounded-xl transition-all shadow-3xs cursor-pointer flex items-center justify-center gap-1.5"
+                      >
+                        {copiedLineSummary ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5 text-natural-clay" />}
+                        <span>{copiedLineSummary ? 'คัดลอกข้อความสำเร็จ!' : 'คัดลอกข้อความ LINE'}</span>
+                      </button>
                     </div>
                   </div>
                 </div>

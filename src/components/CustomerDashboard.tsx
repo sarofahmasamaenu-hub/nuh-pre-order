@@ -27,7 +27,10 @@ import {
   ChevronRight,
   Layers,
   MapPin,
-  CreditCard
+  CreditCard,
+  Copy,
+  Send,
+  Share2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -71,6 +74,7 @@ export default function CustomerDashboard({
   const [sortBy, setSortBy] = useState<'latestOrder' | 'totalOrders' | 'totalSpent' | 'name'>('latestOrder');
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerProfile | null>(null);
   const [copiedMeasurements, setCopiedMeasurements] = useState<boolean>(false);
+  const [copiedLineDashboard, setCopiedLineDashboard] = useState<boolean>(false);
 
   // Group orders into unique customer profiles
   const customerProfiles = useMemo(() => {
@@ -688,6 +692,120 @@ export default function CustomerDashboard({
                     <span className="font-serif font-black text-lg text-amber-700 mt-0.5 block">{selectedCustomer.totalUnpaid.toLocaleString()} ฿</span>
                   </div>
                 </div>
+
+                {/* 1.5 STATUS BREAKDOWN & LINE SHARE BANNER */}
+                {(() => {
+                  const custOrders = selectedCustomer.orders;
+                  const statusCounts = {
+                    [OrderStatus.RECEIVED]: custOrders.filter(o => o.status === OrderStatus.RECEIVED).length,
+                    [OrderStatus.DESIGNING]: custOrders.filter(o => o.status === OrderStatus.DESIGNING).length,
+                    [OrderStatus.CUTTING]: custOrders.filter(o => o.status === OrderStatus.CUTTING).length,
+                    [OrderStatus.SEWING]: custOrders.filter(o => o.status === OrderStatus.SEWING).length,
+                    [OrderStatus.FITTING]: custOrders.filter(o => o.status === OrderStatus.FITTING).length,
+                    [OrderStatus.READY]: custOrders.filter(o => o.status === OrderStatus.READY).length,
+                    [OrderStatus.COMPLETED]: custOrders.filter(o => o.status === OrderStatus.COMPLETED).length,
+                  };
+
+                  const generateLineMessage = () => {
+                    const portalUrl = `${window.location.origin}${window.location.pathname}?tab=customer&search=${encodeURIComponent(selectedCustomer.phone || selectedCustomer.name)}&mode=customer`;
+                    const lines = [
+                      `📲 สรุปสถานะงานสั่งตัด - NUNUH Atelier`,
+                      `----------------------------------`,
+                      `👤 คุณ: ${selectedCustomer.name}`,
+                      `📱 เบอร์โทรศัพท์: ${selectedCustomer.phone || 'ไม่ระบุ'}`,
+                      `📦 จำนวนออเดอร์สั่งตัดรวม: ${selectedCustomer.totalOrdersCount} รายการ`,
+                      ``,
+                      `📊 สรุปสถานะล่าสุด:`,
+                      statusCounts[OrderStatus.RECEIVED] > 0 ? `• 📥 รับออเดอร์แล้ว: ${statusCounts[OrderStatus.RECEIVED]} ชุด` : null,
+                      statusCounts[OrderStatus.DESIGNING] > 0 ? `• 🎨 เตรียมแบบ/ผ้า: ${statusCounts[OrderStatus.DESIGNING]} ชุด` : null,
+                      statusCounts[OrderStatus.CUTTING] > 0 ? `• ✂️ ขึ้นแบบตัดผ้า: ${statusCounts[OrderStatus.CUTTING]} ชุด` : null,
+                      statusCounts[OrderStatus.SEWING] > 0 ? `• 🪡 กำลังเย็บประกอบ: ${statusCounts[OrderStatus.SEWING]} ชุด` : null,
+                      statusCounts[OrderStatus.FITTING] > 0 ? `• 📐 รอ/กำลังฟิตติ้ง: ${statusCounts[OrderStatus.FITTING]} ชุด` : null,
+                      statusCounts[OrderStatus.READY] > 0 ? `• ✨ พร้อมส่งมอบแล้ว: ${statusCounts[OrderStatus.READY]} ชุด` : null,
+                      statusCounts[OrderStatus.COMPLETED] > 0 ? `• 🏁 ส่งมอบสำเร็จแล้ว: ${statusCounts[OrderStatus.COMPLETED]} ชุด` : null,
+                      ``,
+                      `🔍 ตรวจสอบรูปภาพและติดตามสถานะออเดอร์ออนไลน์:`,
+                      portalUrl
+                    ].filter(Boolean);
+                    return lines.join('\n');
+                  };
+
+                  return (
+                    <div className="bg-white rounded-2xl border border-natural-wheat p-4 space-y-3 shadow-3xs">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-stone-100 pb-2.5">
+                        <div>
+                          <h4 className="font-serif font-extrabold text-sm text-natural-espresso flex items-center gap-1.5">
+                            <span>📊 สรุปสถานะออเดอร์ทั้งหมดของผู้สั่งตัดรายนี้</span>
+                            <span className="font-mono text-xs bg-natural-sand text-natural-espresso px-2 py-0.5 rounded-full font-bold">
+                              {selectedCustomer.phone || 'ไม่ระบุเบอร์'}
+                            </span>
+                          </h4>
+                          <p className="text-[11px] text-natural-espresso/60 mt-0.5">
+                            แสดงจำนวนออเดอร์สั่งตัดในแต่ละขั้นตอนการผลิต พร้อมปุ่มแชร์สรุปเข้า LINE ให้อัตโนมัติ
+                          </p>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const msg = generateLineMessage();
+                              const lineUrl = `https://line.me/R/msg/text/?${encodeURIComponent(msg)}`;
+                              window.open(lineUrl, '_blank', 'noopener,noreferrer');
+                            }}
+                            className="text-xs bg-[#06C755] hover:bg-[#05b34c] text-white font-extrabold px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                          >
+                            <Send className="h-3.5 w-3.5" />
+                            <span>แชร์เข้า LINE</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const msg = generateLineMessage();
+                              try {
+                                await navigator.clipboard.writeText(msg);
+                              } catch {
+                                const ta = document.createElement('textarea');
+                                ta.value = msg;
+                                document.body.appendChild(ta);
+                                ta.select();
+                                document.execCommand('copy');
+                                document.body.removeChild(ta);
+                              }
+                              setCopiedLineDashboard(true);
+                              setTimeout(() => setCopiedLineDashboard(false), 3000);
+                            }}
+                            className="text-xs bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5"
+                          >
+                            {copiedLineDashboard ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5 text-stone-500" />}
+                            <span>{copiedLineDashboard ? 'คัดลอกสำเร็จ!' : 'คัดลอกข้อความ LINE'}</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+                        {[
+                          { label: 'รับออเดอร์', icon: '📥', count: statusCounts[OrderStatus.RECEIVED], color: 'text-amber-700 bg-amber-50 border-amber-200' },
+                          { label: 'เตรียมแบบ/ผ้า', icon: '🎨', count: statusCounts[OrderStatus.DESIGNING], color: 'text-orange-700 bg-orange-50 border-orange-200' },
+                          { label: 'ขึ้นแบบตัดผ้า', icon: '✂️', count: statusCounts[OrderStatus.CUTTING], color: 'text-yellow-700 bg-yellow-50 border-yellow-200' },
+                          { label: 'เย็บประกอบ', icon: '🪡', count: statusCounts[OrderStatus.SEWING], color: 'text-blue-700 bg-blue-50 border-blue-200' },
+                          { label: 'ฟิตติ้งชุด', icon: '📐', count: statusCounts[OrderStatus.FITTING], color: 'text-purple-700 bg-purple-50 border-purple-200' },
+                          { label: 'พร้อมส่งมอบ', icon: '✨', count: statusCounts[OrderStatus.READY], color: 'text-emerald-800 bg-emerald-50 border-emerald-300 font-bold' },
+                          { label: 'ส่งมอบสำเร็จ', icon: '🏁', count: statusCounts[OrderStatus.COMPLETED], color: 'text-gray-700 bg-gray-50 border-gray-200' }
+                        ].map((st) => (
+                          <div key={st.label} className={`p-2 rounded-xl border flex flex-col justify-between ${st.color}`}>
+                            <div className="flex justify-between items-center mb-1">
+                              <span className="text-sm">{st.icon}</span>
+                              <span className="font-black text-xs px-1.5 py-0.2 bg-white/80 rounded-md shadow-3xs">{st.count}</span>
+                            </div>
+                            <span className="text-[10px] font-bold line-clamp-1">{st.label}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* 2. TABBED METRICS OR DOUBLE COLUMNS FOR MEASUREMENTS AND REVIEWS */}
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
