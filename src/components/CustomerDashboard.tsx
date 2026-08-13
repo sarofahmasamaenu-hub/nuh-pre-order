@@ -936,7 +936,30 @@ export default function CustomerDashboard({
 
                     {selectedCustomer.orders[0]?.measurements ? (
                       (() => {
-                        const m = selectedCustomer.orders[0].measurements;
+                        const latestOrder = selectedCustomer.orders[0];
+                        const isLatestIDH = latestOrder && (
+                          latestOrder.customerCategory === 'IDH' || 
+                          latestOrder.dressType?.toUpperCase().includes('IDH') || 
+                          Boolean(latestOrder.idhNumber) || 
+                          latestOrder.dressType?.includes('ผ้าคลุม')
+                        );
+
+                        if (isLatestIDH) {
+                          return (
+                            <div className="bg-amber-50/70 p-4 rounded-xl border border-amber-200/60 space-y-2 text-center text-amber-950">
+                              <span className="text-3xl block">🧕</span>
+                              <h6 className="font-serif font-bold text-xs text-amber-950">ออเดอร์ล่าสุดประเภท IDH (ผ้าคลุม)</h6>
+                              <p className="text-[11px] text-amber-900/80">สินค้าประเภท IDH เป็นผ้าคลุมสั่งสำเร็จ ไม่มีตารางวัดตัวสัดส่วนค่ะ</p>
+                              {latestOrder.measurements?.standardSize && (
+                                <p className="text-xs font-bold text-amber-900 pt-1">
+                                  ไซส์ผ้าคลุมที่เลือก: <span className="bg-amber-800 text-white px-2.5 py-0.5 rounded-full">{latestOrder.measurements.standardSize}</span>
+                                </p>
+                              )}
+                            </div>
+                          );
+                        }
+
+                        const m = latestOrder.measurements;
                         return (
                           <div className="space-y-3.5">
                             <div className="grid grid-cols-3 gap-2.5 text-center">

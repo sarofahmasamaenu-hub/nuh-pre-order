@@ -491,7 +491,21 @@ export default function PrintOrderModal({ order, isOpen, onClose }: PrintOrderMo
                 </div>
 
                 {/* Measurements Section */}
-                {activeMeasurements.length > 0 && (
+                {order.customerCategory === 'IDH' || order.dressType?.toUpperCase().includes('IDH') || order.idhNumber || order.dressType?.includes('ผ้าคลุม') ? (
+                  <div className="py-3 border-b border-natural-sand">
+                    <div className="bg-amber-50/70 p-3 rounded-lg border border-amber-200/50 flex items-center justify-between">
+                      <div className="flex items-center space-x-2 text-amber-950 font-bold text-xs">
+                        <span className="text-base">🧕</span>
+                        <span>สินค้าประเภท IDH (ผ้าคลุมสำเร็จ) — ไม่มีตารางวัดตัว</span>
+                      </div>
+                      {order.measurements.standardSize && (
+                        <span className="text-[10px] bg-amber-800 text-white px-2.5 py-0.5 rounded-full font-bold">
+                          ไซส์ผ้าคลุม: {order.measurements.standardSize}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ) : activeMeasurements.length > 0 && (
                   <div className="py-4 border-b border-natural-sand">
                     <div className="flex items-center justify-between mb-2">
                       <h4 className="font-serif font-bold text-xs text-natural-espresso flex items-center">

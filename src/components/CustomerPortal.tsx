@@ -1525,68 +1525,99 @@ export default function CustomerPortal({
                                 </div>
                               </div>
 
-                              {/* Sub-Card: Measurements */}
-                              <div className="bg-white p-4 rounded-xl border border-natural-wheat space-y-3 shadow-3xs">
-                                <h6 className="font-serif font-bold text-xs text-natural-espresso border-b border-natural-sand pb-1.5 flex items-center">
-                                  <Ruler className="h-3.5 w-3.5 mr-1.5 text-natural-clay" /> สัดส่วนเฉพาะออเดอร์นี้
-                                </h6>
-                                <div className="grid grid-cols-3 gap-1.5 text-center text-xs">
-                                  <div className="bg-natural-cream/35 p-1 rounded">
-                                    <p className="text-[9px] text-natural-espresso/45 font-bold">อก</p>
-                                    <p className="font-mono font-bold text-natural-espresso">{order.measurements.chest} ซม.</p>
-                                  </div>
-                                  <div className="bg-natural-cream/35 p-1 rounded">
-                                    <p className="text-[9px] text-natural-espresso/45 font-bold">เอว</p>
-                                    <p className="font-mono font-bold text-natural-espresso">{order.measurements.waist} ซม.</p>
-                                  </div>
-                                  <div className="bg-natural-cream/35 p-1 rounded">
-                                    <p className="text-[9px] text-natural-espresso/45 font-bold">สะโพก</p>
-                                    <p className="font-mono font-bold text-natural-espresso">{order.measurements.hips} ซม.</p>
-                                  </div>
-                                  <div className="bg-natural-cream/35 p-1 rounded">
-                                    <p className="text-[9px] text-natural-espresso/45 font-bold">ไหล่</p>
-                                    <p className="font-mono font-bold text-natural-espresso">{order.measurements.shoulder} ซม.</p>
-                                  </div>
-                                  <div className="bg-natural-cream/35 p-1 rounded">
-                                    <p className="text-[9px] text-natural-espresso/45 font-bold">ความยาว</p>
-                                    <p className="font-mono font-bold text-natural-espresso">{order.measurements.length} ซม.</p>
-                                  </div>
-                                  <div className="bg-natural-cream/35 p-1 rounded">
-                                    <p className="text-[9px] text-natural-espresso/45 font-bold">ส่วนสูง</p>
-                                    <p className="font-mono font-bold text-natural-espresso">{order.measurements.height} ซม.</p>
-                                  </div>
-                                  {order.measurements.frontChest && order.measurements.frontChest !== '-' && (
-                                    <div className="bg-natural-cream/35 p-1 rounded">
-                                      <p className="text-[9px] text-natural-espresso/45 font-bold">บ่าหน้า</p>
-                                      <p className="font-mono font-bold text-natural-espresso">{order.measurements.frontChest} ซม.</p>
-                                    </div>
-                                  )}
-                                  {order.measurements.backChest && order.measurements.backChest !== '-' && (
-                                    <div className="bg-natural-cream/35 p-1 rounded">
-                                      <p className="text-[9px] text-natural-espresso/45 font-bold">บ่าหลัง</p>
-                                      <p className="font-mono font-bold text-natural-espresso">{order.measurements.backChest} ซม.</p>
-                                    </div>
-                                  )}
-                                  {order.measurements.frontLength && order.measurements.frontLength !== '-' && (
-                                    <div className="bg-natural-cream/35 p-1 rounded">
-                                      <p className="text-[9px] text-natural-espresso/45 font-bold">ยาวหน้า</p>
-                                      <p className="font-mono font-bold text-natural-espresso">{order.measurements.frontLength} ซม.</p>
-                                    </div>
-                                  )}
-                                  {order.measurements.backLength && order.measurements.backLength !== '-' && (
-                                    <div className="bg-natural-cream/35 p-1 rounded">
-                                      <p className="text-[9px] text-natural-espresso/45 font-bold">ยาวหลัง</p>
-                                      <p className="font-mono font-bold text-natural-espresso">{order.measurements.backLength} ซม.</p>
-                                    </div>
-                                  )}
-                                  {order.measurements.wrist && order.measurements.wrist !== '-' && (
-                                    <div className="bg-natural-cream/35 p-1 rounded">
-                                      <p className="text-[9px] text-natural-espresso/45 font-bold">ข้อมือ</p>
-                                      <p className="font-mono font-bold text-natural-espresso">{order.measurements.wrist} ซม.</p>
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
+                               {/* Sub-Card: Measurements or IDH Notice */}
+                               {(() => {
+                                 const isIDHOrder = order.customerCategory === 'IDH' || 
+                                   (order.dressType && order.dressType.toUpperCase().includes('IDH')) || 
+                                   Boolean(order.idhNumber && order.idhNumber.trim().length > 0) || 
+                                   (order.dressType && order.dressType.includes('ผ้าคลุม'));
+
+                                 if (isIDHOrder) {
+                                   return (
+                                     <div className="bg-amber-50/70 p-4 rounded-xl border border-amber-200/60 shadow-3xs space-y-2 flex flex-col justify-center">
+                                       <div className="flex items-center space-x-2 text-amber-950">
+                                         <span className="text-xl">🧕</span>
+                                         <div>
+                                           <h6 className="font-serif font-bold text-xs text-amber-950">งานสั่งตัดประเภท IDH (ผ้าคลุม)</h6>
+                                           <p className="text-[10px] text-amber-900/80 mt-0.5">สินค้าประเภท IDH เป็นผ้าคลุมสั่งสำเร็จ ไม่มีตารางวัดตัวค่ะ</p>
+                                         </div>
+                                       </div>
+                                       {order.measurements.standardSize && (
+                                         <div className="mt-1 pt-1.5 border-t border-amber-200/40 flex items-center gap-1.5 text-xs">
+                                           <span className="text-[10px] text-amber-900/80 font-bold">ไซส์ผ้าคลุม:</span>
+                                           <span className="bg-amber-800 text-white font-bold text-[10px] px-2.5 py-0.5 rounded-full">
+                                             {order.measurements.standardSize}
+                                           </span>
+                                         </div>
+                                       )}
+                                     </div>
+                                   );
+                                 }
+
+                                 return (
+                                   <div className="bg-white p-4 rounded-xl border border-natural-wheat space-y-3 shadow-3xs">
+                                     <h6 className="font-serif font-bold text-xs text-natural-espresso border-b border-natural-sand pb-1.5 flex items-center">
+                                       <Ruler className="h-3.5 w-3.5 mr-1.5 text-natural-clay" /> สัดส่วนเฉพาะออเดอร์นี้
+                                     </h6>
+                                     <div className="grid grid-cols-3 gap-1.5 text-center text-xs">
+                                       <div className="bg-natural-cream/35 p-1 rounded">
+                                         <p className="text-[9px] text-natural-espresso/45 font-bold">อก</p>
+                                         <p className="font-mono font-bold text-natural-espresso">{order.measurements.chest} ซม.</p>
+                                       </div>
+                                       <div className="bg-natural-cream/35 p-1 rounded">
+                                         <p className="text-[9px] text-natural-espresso/45 font-bold">เอว</p>
+                                         <p className="font-mono font-bold text-natural-espresso">{order.measurements.waist} ซม.</p>
+                                       </div>
+                                       <div className="bg-natural-cream/35 p-1 rounded">
+                                         <p className="text-[9px] text-natural-espresso/45 font-bold">สะโพก</p>
+                                         <p className="font-mono font-bold text-natural-espresso">{order.measurements.hips} ซม.</p>
+                                       </div>
+                                       <div className="bg-natural-cream/35 p-1 rounded">
+                                         <p className="text-[9px] text-natural-espresso/45 font-bold">ไหล่</p>
+                                         <p className="font-mono font-bold text-natural-espresso">{order.measurements.shoulder} ซม.</p>
+                                       </div>
+                                       <div className="bg-natural-cream/35 p-1 rounded">
+                                         <p className="text-[9px] text-natural-espresso/45 font-bold">ความยาว</p>
+                                         <p className="font-mono font-bold text-natural-espresso">{order.measurements.length} ซม.</p>
+                                       </div>
+                                       <div className="bg-natural-cream/35 p-1 rounded">
+                                         <p className="text-[9px] text-natural-espresso/45 font-bold">ส่วนสูง</p>
+                                         <p className="font-mono font-bold text-natural-espresso">{order.measurements.height} ซม.</p>
+                                       </div>
+                                       {order.measurements.frontChest && order.measurements.frontChest !== '-' && (
+                                         <div className="bg-natural-cream/35 p-1 rounded">
+                                           <p className="text-[9px] text-natural-espresso/45 font-bold">บ่าหน้า</p>
+                                           <p className="font-mono font-bold text-natural-espresso">{order.measurements.frontChest} ซม.</p>
+                                         </div>
+                                       )}
+                                       {order.measurements.backChest && order.measurements.backChest !== '-' && (
+                                         <div className="bg-natural-cream/35 p-1 rounded">
+                                           <p className="text-[9px] text-natural-espresso/45 font-bold">บ่าหลัง</p>
+                                           <p className="font-mono font-bold text-natural-espresso">{order.measurements.backChest} ซม.</p>
+                                         </div>
+                                       )}
+                                       {order.measurements.frontLength && order.measurements.frontLength !== '-' && (
+                                         <div className="bg-natural-cream/35 p-1 rounded">
+                                           <p className="text-[9px] text-natural-espresso/45 font-bold">ยาวหน้า</p>
+                                           <p className="font-mono font-bold text-natural-espresso">{order.measurements.frontLength} ซม.</p>
+                                         </div>
+                                       )}
+                                       {order.measurements.backLength && order.measurements.backLength !== '-' && (
+                                         <div className="bg-natural-cream/35 p-1 rounded">
+                                           <p className="text-[9px] text-natural-espresso/45 font-bold">ยาวหลัง</p>
+                                           <p className="font-mono font-bold text-natural-espresso">{order.measurements.backLength} ซม.</p>
+                                         </div>
+                                       )}
+                                       {order.measurements.wrist && order.measurements.wrist !== '-' && (
+                                         <div className="bg-natural-cream/35 p-1 rounded">
+                                           <p className="text-[9px] text-natural-espresso/45 font-bold">ข้อมือ</p>
+                                           <p className="font-mono font-bold text-natural-espresso">{order.measurements.wrist} ซม.</p>
+                                         </div>
+                                       )}
+                                     </div>
+                                   </div>
+                                 );
+                               })()}
 
                               {/* Sub-Card: Payments */}
                               <div className="bg-white p-4 rounded-xl border border-natural-wheat space-y-3 flex flex-col justify-between shadow-3xs">
@@ -1725,30 +1756,44 @@ export default function CustomerPortal({
                               </div>
                             </div>
 
-                            {/* Standard specs */}
-                            <div className="text-xs space-y-1 bg-natural-sand/20 p-2.5 rounded-xl border border-natural-wheat/40">
-                              <p className="text-[9px] text-natural-espresso/45 font-bold uppercase tracking-wider">ขนาดชุดที่ตัดสำเร็จ</p>
-                              <div className="font-mono font-bold text-natural-espresso/85 grid grid-cols-3 gap-1 text-center text-[10px]">
-                                <div>อก: {order.measurements.chest} ซม.</div>
-                                <div>เอว: {order.measurements.waist} ซม.</div>
-                                <div>สะโพก: {order.measurements.hips} ซม.</div>
-                                {order.measurements.frontChest && order.measurements.frontChest !== '-' && (
-                                  <div>บ่าหน้า: {order.measurements.frontChest} ซม.</div>
-                                )}
-                                {order.measurements.backChest && order.measurements.backChest !== '-' && (
-                                  <div>บ่าหลัง: {order.measurements.backChest} ซม.</div>
-                                )}
-                                {order.measurements.frontLength && order.measurements.frontLength !== '-' && (
-                                  <div>ยาวหน้า: {order.measurements.frontLength} ซม.</div>
-                                )}
-                                {order.measurements.backLength && order.measurements.backLength !== '-' && (
-                                  <div>ยาวหลัง: {order.measurements.backLength} ซม.</div>
-                                )}
-                                {order.measurements.wrist && order.measurements.wrist !== '-' && (
-                                  <div>ข้อมือ: {order.measurements.wrist} ซม.</div>
+                            {/* Standard specs or IDH badge */}
+                            {order.customerCategory === 'IDH' || order.dressType?.toUpperCase().includes('IDH') || order.idhNumber || order.dressType?.includes('ผ้าคลุม') ? (
+                              <div className="text-xs bg-amber-50/80 p-2.5 rounded-xl border border-amber-200/50 flex items-center justify-between text-amber-950 font-bold">
+                                <span className="flex items-center gap-1.5 text-[11px]">
+                                  <span>🧕</span>
+                                  <span>ผ้าคลุม (IDH) — ไม่มีวัดตัว</span>
+                                </span>
+                                {order.measurements.standardSize && (
+                                  <span className="text-[10px] bg-amber-800 text-white px-2 py-0.5 rounded-full font-bold">
+                                    ไซส์ {order.measurements.standardSize}
+                                  </span>
                                 )}
                               </div>
-                            </div>
+                            ) : (
+                              <div className="text-xs space-y-1 bg-natural-sand/20 p-2.5 rounded-xl border border-natural-wheat/40">
+                                <p className="text-[9px] text-natural-espresso/45 font-bold uppercase tracking-wider">ขนาดชุดที่ตัดสำเร็จ</p>
+                                <div className="font-mono font-bold text-natural-espresso/85 grid grid-cols-3 gap-1 text-center text-[10px]">
+                                  <div>อก: {order.measurements.chest} ซม.</div>
+                                  <div>เอว: {order.measurements.waist} ซม.</div>
+                                  <div>สะโพก: {order.measurements.hips} ซม.</div>
+                                  {order.measurements.frontChest && order.measurements.frontChest !== '-' && (
+                                    <div>บ่าหน้า: {order.measurements.frontChest} ซม.</div>
+                                  )}
+                                  {order.measurements.backChest && order.measurements.backChest !== '-' && (
+                                    <div>บ่าหลัง: {order.measurements.backChest} ซม.</div>
+                                  )}
+                                  {order.measurements.frontLength && order.measurements.frontLength !== '-' && (
+                                    <div>ยาวหน้า: {order.measurements.frontLength} ซม.</div>
+                                  )}
+                                  {order.measurements.backLength && order.measurements.backLength !== '-' && (
+                                    <div>ยาวหลัง: {order.measurements.backLength} ซม.</div>
+                                  )}
+                                  {order.measurements.wrist && order.measurements.wrist !== '-' && (
+                                    <div>ข้อมือ: {order.measurements.wrist} ซม.</div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
 
                             {/* Mini financials */}
                             <div className="text-right text-xs">
