@@ -598,91 +598,130 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
       'บันทึกเพิ่มเติม'
     ];
 
-    const rows = orders.map(o => [
-      o.orderNumber,
-      o.branch || 'สาขานราธิวาส',
-      o.customerName,
-      o.customerPhone,
-      o.customerSocial || '-',
-      o.customerCategory || '-',
-      o.membershipTier || '-',
-      o.externalOrderId || '-',
-      o.dressType,
-      o.fabricType,
-      o.fabricColor || '-',
-      STATUS_MAP[o.status]?.label || o.status,
-      o.orderDate,
-      o.deliveryDate,
-      o.price,
-      o.discount || 0,
-      o.deposit,
-      o.finalPaymentAmount || 0,
-      o.finalPaymentDate || '-',
-      o.paymentMethod || 'เงินโอน',
-      Math.max(0, o.price - o.deposit - (o.discount || 0) - (o.finalPaymentAmount || 0)),
-      o.measurements.chest,
-      o.measurements.waist,
-      o.measurements.hips,
-      o.measurements.shoulder,
-      o.measurements.sleeveLength,
-      o.measurements.armhole,
-      o.measurements.length,
-      o.measurements.height || '-',
-      o.measurements.weight || '-',
-      o.measurements.frontChest || '-',
-      o.measurements.backChest || '-',
-      o.measurements.frontLength || '-',
-      o.measurements.backLength || '-',
-      o.measurements.wrist || '-',
-      o.measurements.otherNotes || '-'
-    ]);
+    const rows = orders.map(o => {
+      const unpaid = Math.max(0, o.price - (o.discount || 0) - o.deposit - (o.finalPaymentAmount || 0));
+      const unpaidDisplay = unpaid > 0 ? unpaid : 'ชำระเรียบร้อย';
+
+      let pm = (o.paymentMethod || 'โอน').trim();
+      if (pm === 'เงินโอน' || pm === 'โอน') {
+        pm = 'โอน';
+      } else if (pm === 'เงินสด') {
+        pm = 'เงินสด';
+      } else if (pm === 'บัตรเครดิต') {
+        pm = 'บัตรเครดิต';
+      } else if (pm.includes('โอน')) {
+        pm = 'โอน';
+      } else if (pm.includes('สด')) {
+        pm = 'เงินสด';
+      } else if (pm.includes('บัตร')) {
+        pm = 'บัตรเครดิต';
+      }
+
+      return [
+        o.orderNumber,
+        o.branch || 'สาขานราธิวาส',
+        o.customerName,
+        o.customerPhone,
+        o.customerSocial || '-',
+        o.customerCategory || '-',
+        o.membershipTier || '-',
+        o.externalOrderId || '-',
+        o.dressType,
+        o.fabricType,
+        o.fabricColor || '-',
+        STATUS_MAP[o.status]?.label || o.status,
+        o.orderDate,
+        o.deliveryDate,
+        o.price,
+        o.discount || 0,
+        o.deposit,
+        pm,
+        unpaidDisplay,
+        o.measurements.chest,
+        o.measurements.waist,
+        o.measurements.hips,
+        o.measurements.shoulder,
+        o.measurements.sleeveLength,
+        o.measurements.armhole,
+        o.measurements.length,
+        o.measurements.height || '-',
+        o.measurements.weight || '-',
+        o.measurements.frontChest || '-',
+        o.measurements.backChest || '-',
+        o.measurements.frontLength || '-',
+        o.measurements.backLength || '-',
+        o.measurements.wrist || '-',
+        o.measurements.otherNotes || '-'
+      ];
+    });
 
     return [headers.join('\t'), ...rows.map(row => row.join('\t'))].join('\n');
   };
 
   const downloadCSV = () => {
     const headers = [
-      'Order Number', 'Customer Name', 'Phone', 'Social Contact', 'Job Type', 'Membership Card Type', 'External Order ID', 'Dress Type', 
+      'Order Number', 'Branch', 'Customer Name', 'Phone', 'Social Contact', 'Job Type', 'Membership Card Type', 'External Order ID', 'Dress Type', 
       'Fabric Type', 'Fabric Color', 'Status', 'Order Date', 'Delivery Date', 
       'Price', 'Discount', 'Deposit', 'Payment Method', 'Unpaid Balance', 'Chest', 'Waist', 'Hips', 
       'Shoulder', 'Sleeve Length', 'Armhole', 'Dress Length', 'Height', 'Weight', 'Front Chest', 'Back Chest', 'Front Length', 'Back Length', 'Wrist', 'Other Notes'
     ];
 
-    const rows = orders.map(o => [
-      `"${o.orderNumber}"`,
-      `"${o.customerName.replace(/"/g, '""')}"`,
-      `"${o.customerPhone}"`,
-      `"${(o.customerSocial || '-').replace(/"/g, '""')}"`,
-      `"${o.customerCategory || '-'}"`,
-      `"${o.membershipTier || '-'}"`,
-      `"${o.externalOrderId || '-'}"`,
-      `"${o.dressType.replace(/"/g, '""')}"`,
-      `"${o.fabricType.replace(/"/g, '""')}"`,
-      `"${(o.fabricColor || '-').replace(/"/g, '""')}"`,
-      `"${STATUS_MAP[o.status]?.label || o.status}"`,
-      `"${o.orderDate}"`,
-      `"${o.deliveryDate}"`,
-      o.price,
-      o.discount || 0,
-      o.deposit,
-      `"${o.paymentMethod || 'เงินโอน'}"`,
-      Math.max(0, o.price - o.deposit - (o.discount || 0)),
-      `"${o.measurements.chest}"`,
-      `"${o.measurements.waist}"`,
-      `"${o.measurements.hips}"`,
-      `"${o.measurements.shoulder}"`,
-      `"${o.measurements.sleeveLength}"`,
-      `"${o.measurements.armhole}"`,
-      `"${o.measurements.length}"`,
-      o.measurements.height || 0,
-      o.measurements.weight || 0,
-      `"${o.measurements.frontChest || '-'}"`,
-      `"${o.measurements.backChest || '-'}"`,
-      `"${o.measurements.frontLength || '-'}"`,
-      `"${o.measurements.backLength || '-'}"`,
-      `"${o.measurements.wrist || '-'}"`,
-      `"${(o.measurements.otherNotes || '-').replace(/"/g, '""')}"`
-    ]);
+    const rows = orders.map(o => {
+      const unpaid = Math.max(0, o.price - (o.discount || 0) - o.deposit - (o.finalPaymentAmount || 0));
+      const unpaidDisplay = unpaid > 0 ? unpaid : 'ชำระเรียบร้อย';
+
+      let pm = (o.paymentMethod || 'โอน').trim();
+      if (pm === 'เงินโอน' || pm === 'โอน') {
+        pm = 'โอน';
+      } else if (pm === 'เงินสด') {
+        pm = 'เงินสด';
+      } else if (pm === 'บัตรเครดิต') {
+        pm = 'บัตรเครดิต';
+      } else if (pm.includes('โอน')) {
+        pm = 'โอน';
+      } else if (pm.includes('สด')) {
+        pm = 'เงินสด';
+      } else if (pm.includes('บัตร')) {
+        pm = 'บัตรเครดิต';
+      }
+
+      return [
+        `"${o.orderNumber}"`,
+        `"${o.branch || 'สาขานราธิวาส'}"`,
+        `"${o.customerName.replace(/"/g, '""')}"`,
+        `"${o.customerPhone}"`,
+        `"${(o.customerSocial || '-').replace(/"/g, '""')}"`,
+        `"${o.customerCategory || '-'}"`,
+        `"${o.membershipTier || '-'}"`,
+        `"${o.externalOrderId || '-'}"`,
+        `"${o.dressType.replace(/"/g, '""')}"`,
+        `"${o.fabricType.replace(/"/g, '""')}"`,
+        `"${(o.fabricColor || '-').replace(/"/g, '""')}"`,
+        `"${STATUS_MAP[o.status]?.label || o.status}"`,
+        `"${o.orderDate}"`,
+        `"${o.deliveryDate}"`,
+        o.price,
+        o.discount || 0,
+        o.deposit,
+        `"${pm}"`,
+        typeof unpaidDisplay === 'number' ? unpaidDisplay : `"${unpaidDisplay}"`,
+        `"${o.measurements.chest}"`,
+        `"${o.measurements.waist}"`,
+        `"${o.measurements.hips}"`,
+        `"${o.measurements.shoulder}"`,
+        `"${o.measurements.sleeveLength}"`,
+        `"${o.measurements.armhole}"`,
+        `"${o.measurements.length}"`,
+        o.measurements.height || 0,
+        o.measurements.weight || 0,
+        `"${o.measurements.frontChest || '-'}"`,
+        `"${o.measurements.backChest || '-'}"`,
+        `"${o.measurements.frontLength || '-'}"`,
+        `"${o.measurements.backLength || '-'}"`,
+        `"${o.measurements.wrist || '-'}"`,
+        `"${(o.measurements.otherNotes || '-').replace(/"/g, '""')}"`
+      ];
+    });
 
     const content = '\uFEFF' + [headers.join(','), ...rows.map(row => row.join(','))].join('\r\n');
     const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
