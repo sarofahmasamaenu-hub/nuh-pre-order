@@ -129,7 +129,13 @@ export default function EditOrderModal({ order, onClose, onSave }: EditOrderModa
     setSku(newSku);
     const matched = catalogue.find(item => item.sku && item.sku.toUpperCase() === newSku.toUpperCase().trim());
     if (matched) {
-      setDressType(matched.category === 'Abaya' ? 'อาบายะห์' : 'เดรสราตรี');
+      if (matched.category === 'IDH' || matched.category?.includes('IDH') || matched.sku?.toUpperCase().startsWith('IDH')) {
+        setDressType('IDH');
+        setCustomerCategory('IDH');
+        setIsMatchingSet(true);
+      } else {
+        setDressType(matched.category === 'Abaya' ? 'อาบายะห์' : 'เดรสราตรี');
+      }
       setFabricType(matched.fabricRecommend.split(' & ')[0] || '');
       
       if (selectedSize && matched.sizePrices && matched.sizePrices[selectedSize]) {
@@ -387,6 +393,7 @@ export default function EditOrderModal({ order, onClose, onSave }: EditOrderModa
                       setCustomerCategory(val);
                       if (val === 'IDH') {
                         setIsMatchingSet(true);
+                        setDressType('IDH');
                       }
                     }}
                     className="w-full text-sm px-3 py-2 rounded-xl border border-natural-wheat focus:outline-none focus:ring-2 focus:ring-natural-clay/20 focus:border-natural-clay bg-natural-cream/10 cursor-pointer"
@@ -465,9 +472,17 @@ export default function EditOrderModal({ order, onClose, onSave }: EditOrderModa
                   <label className="block text-xs font-semibold text-natural-espresso/70 mb-1">ประเภทชุด</label>
                   <select
                     value={dressType}
-                    onChange={(e) => setDressType(e.target.value)}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setDressType(val);
+                      if (val === 'IDH') {
+                        setCustomerCategory('IDH');
+                        setIsMatchingSet(true);
+                      }
+                    }}
                     className="w-full text-sm px-3 py-2 rounded-xl border border-natural-wheat focus:outline-none focus:ring-2 focus:ring-natural-clay/20 focus:border-natural-clay bg-natural-cream/10 cursor-pointer"
                   >
+                    <option value="IDH">IDH (ผ้าคลุม / กึ่งกูตูร์)</option>
                     <option value="เดรสราตรี">เดรสราตรีออกงาน</option>
                     <option value="อาบายะห์">อาบายะห์ (Abaya)</option>
                     <option value="จั๊มสูท">จั๊มสูท (Jumpsuit)</option>
@@ -486,7 +501,7 @@ export default function EditOrderModal({ order, onClose, onSave }: EditOrderModa
                     value={fabricType}
                     onChange={(e) => setFabricType(e.target.value)}
                     placeholder="ระบุหรือเลือกชนิดผ้า"
-                    className="w-full text-sm px-3 py-2 rounded-xl border border-natural-wheat focus:outline-none focus:ring-2 focus:ring-natural-clay/20 focus:border-natural-clay bg-natural-cream/10"
+                    className="w-full text-sm px-3 py-2 rounded-xl border border-natural-wheat focus:outline-none focus:ring-2 focus:ring-natural-clay/20 focus:border-natural-clay bg-white text-natural-espresso font-semibold"
                   />
                   <datalist id="edit-fabric-types">
                     <option value="Heavy Premium Satin" />
@@ -494,7 +509,14 @@ export default function EditOrderModal({ order, onClose, onSave }: EditOrderModa
                     <option value="French Chantilly Lace" />
                     <option value="Italian Wool Blend" />
                     <option value="Luminous Organza" />
+                    <option value="ผ้าชีฟองเกาหลี" />
+                    <option value="ผ้าเครปเปเป้" />
+                    <option value="ผ้าซิลค์ซาติน" />
+                    <option value="ผ้าไหมอิตาลี" />
+                    <option value="ผ้าลูกไม้ฝรั่งเศส" />
                     <option value="ผ้าลินินธรรมชาติ" />
+                    <option value="ผ้ากำมะหยี่" />
+                    <option value="ผ้าทวีด" />
                   </datalist>
                 </div>
 

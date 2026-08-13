@@ -263,7 +263,13 @@ export default function OrderForm({
     if (designId !== 'custom') {
       const selected = catalogue.find(item => item.id === designId);
       if (selected) {
-        setDressType(selected.category === 'Abaya' ? 'อาบายะห์' : 'เดรสราตรี');
+        if (selected.category === 'IDH' || selected.category?.includes('IDH') || selected.sku?.toUpperCase().startsWith('IDH')) {
+          setDressType('IDH');
+          setCustomerCategory('IDH');
+          setIsMatchingSet(true);
+        } else {
+          setDressType(selected.category === 'Abaya' ? 'อาบายะห์' : 'เดรสราตรี');
+        }
         setFabricType(selected.fabricRecommend.split(' & ')[0] || '');
         setSku(selected.sku || '');
         
@@ -297,7 +303,13 @@ export default function OrderForm({
     const matched = catalogue.find(item => item.sku && item.sku.toUpperCase() === newSku.toUpperCase().trim());
     if (matched) {
       setSelectedDesignId(matched.id);
-      setDressType(matched.category === 'Abaya' ? 'อาบายะห์' : 'เดรสราตรี');
+      if (matched.category === 'IDH' || matched.category?.includes('IDH') || matched.sku?.toUpperCase().startsWith('IDH')) {
+        setDressType('IDH');
+        setCustomerCategory('IDH');
+        setIsMatchingSet(true);
+      } else {
+        setDressType(matched.category === 'Abaya' ? 'อาบายะห์' : 'เดรสราตรี');
+      }
       setFabricType(matched.fabricRecommend.split(' & ')[0] || '');
       
       // บันทึกรูปภาพแบบลงในรูปภาพสั่งตัดของออเดอร์ทันทีตามคำสั่งข้อ 1 ของผู้ใช้
@@ -722,6 +734,7 @@ export default function OrderForm({
                             setCustomerCategory(cat);
                             if (cat === 'IDH') {
                               setIsMatchingSet(true);
+                              setDressType('IDH');
                             }
                           }}
                           className={`py-1.5 px-1 rounded-lg text-xs font-bold transition-all text-center cursor-pointer border ${
@@ -811,6 +824,75 @@ export default function OrderForm({
               </div>
 
               <div className="space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-natural-espresso/70 mb-1">
+                      ประเภทชุด (Dress Type)
+                    </label>
+                    <select
+                      value={dressType}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setDressType(val);
+                        if (val === 'IDH') {
+                          setCustomerCategory('IDH');
+                          setIsMatchingSet(true);
+                        }
+                      }}
+                      className="w-full text-sm px-3 py-2 rounded-xl border border-natural-wheat focus:outline-none focus:ring-2 focus:ring-natural-clay/20 focus:border-natural-clay bg-white text-natural-espresso font-semibold cursor-pointer"
+                    >
+                      <option value="IDH">IDH (ผ้าคลุม / กึ่งกูตูร์)</option>
+                      <option value="เดรสราตรี">เดรสราตรีออกงาน</option>
+                      <option value="อาบายะห์">อาบายะห์ (Abaya)</option>
+                      <option value="จั๊มสูท">จั๊มสูท (Jumpsuit)</option>
+                      <option value="เดรสสั้น">เดรสสั้น (Short Dress)</option>
+                      <option value="ชุดทำงาน">ชุดทำงาน / สูทสุภาพ</option>
+                      <option value="ชุดไทย">ชุดไทยประยุกต์</option>
+                      <option value="อื่นๆ">อื่นๆ</option>
+                    </select>
+                    {dressType === 'อื่นๆ' && (
+                      <div className="mt-2">
+                        <input
+                          type="text"
+                          value={customDressType}
+                          onChange={(e) => setCustomDressType(e.target.value)}
+                          placeholder="ระบุประเภทชุดเพิ่มเติม"
+                          className="w-full text-sm px-3 py-2 rounded-xl border border-natural-wheat focus:outline-none focus:ring-2 focus:ring-natural-clay/20 focus:border-natural-clay bg-natural-cream/10"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-natural-espresso/70 mb-1">
+                      ชนิดเนื้อผ้า (Fabric Type)
+                    </label>
+                    <input
+                      type="text"
+                      list="order-fabric-types"
+                      value={fabricType}
+                      onChange={(e) => setFabricType(e.target.value)}
+                      placeholder="ระบุหรือเลือกชนิดผ้า"
+                      className="w-full text-sm px-3 py-2 rounded-xl border border-natural-wheat focus:outline-none focus:ring-2 focus:ring-natural-clay/20 focus:border-natural-clay bg-white text-natural-espresso font-semibold"
+                    />
+                    <datalist id="order-fabric-types">
+                      <option value="Heavy Premium Satin" />
+                      <option value="Premium Silk Crepe" />
+                      <option value="French Chantilly Lace" />
+                      <option value="Italian Wool Blend" />
+                      <option value="Luminous Organza" />
+                      <option value="ผ้าชีฟองเกาหลี" />
+                      <option value="ผ้าเครปเปเป้" />
+                      <option value="ผ้าซิลค์ซาติน" />
+                      <option value="ผ้าไหมอิตาลี" />
+                      <option value="ผ้าลูกไม้ฝรั่งเศส" />
+                      <option value="ผ้าลินินธรรมชาติ" />
+                      <option value="ผ้ากำมะหยี่" />
+                      <option value="ผ้าทวีด" />
+                    </datalist>
+                  </div>
+                </div>
+
                 <div>
                   <label className="block text-xs font-medium text-natural-espresso/70 mb-1 flex items-center space-x-1">
                     <span>เลือกแบบชุดเสนอแนะนำ (Designer Catalogue Selection)</span>
