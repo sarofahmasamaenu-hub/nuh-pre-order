@@ -80,6 +80,9 @@ export default function CustomerPortal({
 
   const [printingOrder, setPrintingOrder] = useState<Order | null>(null);
 
+  // Avatar file input ref
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+
   // States for Customer Profile & Loyalty Card
   const [profileAvatar, setProfileAvatar] = useState<string>('');
   const [showPrivileges, setShowPrivileges] = useState<boolean>(false);
@@ -92,6 +95,39 @@ export default function CustomerPortal({
   const [editName, setEditName] = useState<string>('');
   const [editPhone, setEditPhone] = useState<string>('');
   const [editSocial, setEditSocial] = useState<string>('');
+
+  // Delete attached order reference photo or slip
+  const handleDeleteOrderPhoto = (orderId: string, photoType: 'customImage' | 'customImage2' | 'slipImage') => {
+    if (!confirm('คุณต้องการลบรูปภาพที่แนบไว้สำหรับออเดอร์นี้ใช่หรือไม่?')) return;
+
+    const updatedGlobalOrders = orders.map(o => {
+      if (o.id === orderId) {
+        const copy = { ...o };
+        if (photoType === 'customImage') copy.customImage = undefined;
+        if (photoType === 'customImage2') copy.customImage2 = undefined;
+        if (photoType === 'slipImage') copy.slipImage = undefined;
+        return copy;
+      }
+      return o;
+    });
+
+    if (onUpdateOrders) {
+      onUpdateOrders(updatedGlobalOrders);
+    }
+
+    if (searchedOrders) {
+      setSearchedOrders(prev => prev ? prev.map(o => {
+        if (o.id === orderId) {
+          const copy = { ...o };
+          if (photoType === 'customImage') copy.customImage = undefined;
+          if (photoType === 'customImage2') copy.customImage2 = undefined;
+          if (photoType === 'slipImage') copy.slipImage = undefined;
+          return copy;
+        }
+        return o;
+      }) : null);
+    }
+  };
 
   // Customer Review states for past orders
   const [activeReviewOrderId, setActiveReviewOrderId] = useState<string | null>(null);
@@ -815,22 +851,64 @@ export default function CustomerPortal({
                         </h5>
                         
                         <div className="flex items-center space-x-5">
-                          <div className="relative group flex-shrink-0">
-                            <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-natural-clay/30 bg-natural-sand/10 flex items-center justify-center relative shadow-inner">
-                              {profileAvatar ? (
-                                <img 
-                                  src={profileAvatar} 
-                                  alt="Client Portrait" 
-                                  className="w-full h-full object-cover"
+                          {/* Avatar Circle with upload camera trigger */}
+                          <div className="flex flex-col items-center shrink-0">
+                            <div className="relative group">
+                              <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-natural-clay/30 bg-natural-sand/10 flex items-center justify-center relative shadow-inner">
+                                {profileAvatar ? (
+                                  <img 
+                                    src={profileAvatar} 
+                                    alt="Client Portrait" 
+                                    className="w-full h-full object-cover"
+                                  />
+                                ) : (
+                                  <div className="text-center text-natural-espresso/25 flex flex-col items-center">
+                                    <User className="h-10 w-10 text-natural-espresso/20" />
+                                    <span className="text-[9px] font-bold text-natural-espresso/40">ไม่มีรูปโปรไฟล์</span>
+                                  </div>
+                                )}
+
+                                {/* Hidden file input */}
+                                <input 
+                                  type="file" 
+                                  ref={avatarInputRef} 
+                                  accept="image/*" 
+                                  onChange={handleAvatarUpload} 
+                                  className="hidden" 
                                 />
-                              ) : (
-                                <div className="text-center text-natural-espresso/25 flex flex-col items-center">
-                                  <User className="h-10 w-10 text-natural-espresso/20" />
-                                  <span className="text-[9px] font-bold text-natural-espresso/40">No Photo</span>
-                                </div>
-                              )}
+
+                                {/* Hover overlay button */}
+                                <button
+                                  type="button"
+                                  onClick={() => avatarInputRef.current?.click()}
+                                  className="absolute inset-0 bg-black/40 text-white opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-[10px] font-bold cursor-pointer"
+                                  title="คลิกเพื่อเลือกหรือเปลี่ยนรูปโปรไฟล์"
+                                >
+                                  <Camera className="h-5 w-5 mb-0.5" />
+                                  <span>{profileAvatar ? 'เปลี่ยนรูป' : 'ใส่รูป'}</span>
+                                </button>
+                              </div>
+
+                              {/* Camera badge button */}
+                              <button
+                                type="button"
+                                onClick={() => avatarInputRef.current?.click()}
+                                className="absolute bottom-0 right-0 p-1.5 bg-natural-clay hover:bg-natural-clay/90 text-white rounded-full shadow-md transition-all cursor-pointer border border-white"
+                                title="ใส่/เปลี่ยนรูปโปรไฟล์"
+                              >
+                                <Camera className="h-3.5 w-3.5" />
+                              </button>
                             </div>
-                            
+
+                            {/* Direct Add/Change Profile Photo Button */}
+                            <button
+                              type="button"
+                              onClick={() => avatarInputRef.current?.click()}
+                              className="mt-2 text-[10px] bg-natural-clay hover:bg-natural-clay/90 text-white px-2.5 py-1 rounded-lg font-bold flex items-center justify-center gap-1 cursor-pointer transition-all shadow-2xs"
+                            >
+                              <Camera className="h-3 w-3" />
+                              <span>{profileAvatar ? 'เปลี่ยนรูปโปรไฟล์' : 'เพิ่มรูปโปรไฟล์'}</span>
+                            </button>
                           </div>
                           
                           <div className="space-y-1 flex-1">
@@ -866,6 +944,30 @@ export default function CustomerPortal({
                                     placeholder="Line ID / IG"
                                   />
                                 </div>
+
+                                {/* Profile photo actions inside edit form */}
+                                <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-stone-100">
+                                  <button
+                                    type="button"
+                                    onClick={() => avatarInputRef.current?.click()}
+                                    className="text-[10px] bg-stone-100 hover:bg-stone-200 text-stone-700 px-2 py-1 rounded font-bold transition-all flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <Camera className="h-3 w-3 text-stone-500" />
+                                    <span>{profileAvatar ? 'เปลี่ยนรูปโปรไฟล์' : 'แนบรูปโปรไฟล์'}</span>
+                                  </button>
+
+                                  {profileAvatar && (
+                                    <button 
+                                      type="button"
+                                      onClick={handleRemoveAvatar}
+                                      className="text-[10px] bg-red-50 hover:bg-red-100 text-red-600 px-2 py-1 rounded font-bold transition-all flex items-center gap-1 cursor-pointer"
+                                    >
+                                      <Trash2 className="h-3 w-3" />
+                                      <span>ลบรูป</span>
+                                    </button>
+                                  )}
+                                </div>
+
                                 <div className="flex gap-2 pt-1">
                                   <button
                                     type="button"
@@ -914,22 +1016,33 @@ export default function CustomerPortal({
                                   )}
                                 </div>
                                 
-                                <div className="flex flex-wrap items-center gap-3 pt-2">
+                                <div className="flex flex-wrap items-center gap-2 pt-2">
                                   <button
                                     type="button"
                                     onClick={() => startEditingProfile(cName, cPhone, cSocial)}
-                                    className="text-[10px] text-natural-clay hover:text-natural-clay/85 font-bold underline cursor-pointer"
+                                    className="text-[10px] bg-natural-sand/20 hover:bg-natural-sand/40 text-natural-espresso font-bold px-2.5 py-1 rounded-lg border border-natural-wheat/80 cursor-pointer transition-all"
                                   >
-                                    แก้ไขข้อมูล
+                                    ✏️ แก้ไขข้อมูลโปรไฟล์
                                   </button>
                                   
+                                  <button
+                                    type="button"
+                                    onClick={() => avatarInputRef.current?.click()}
+                                    className="text-[10px] bg-natural-clay/10 hover:bg-natural-clay/20 text-natural-clay font-bold px-2.5 py-1 rounded-lg border border-natural-clay/30 flex items-center gap-1 cursor-pointer transition-all"
+                                  >
+                                    <Camera className="h-3 w-3" />
+                                    <span>{profileAvatar ? 'เปลี่ยนรูปโปรไฟล์' : 'ใส่รูปโปรไฟล์'}</span>
+                                  </button>
+
                                   {profileAvatar && (
                                     <button 
                                       type="button"
                                       onClick={handleRemoveAvatar}
-                                      className="text-[10px] text-red-500 hover:text-red-700 font-bold underline cursor-pointer"
+                                      className="text-[10px] bg-red-50 hover:bg-red-100 text-red-600 font-bold px-2.5 py-1 rounded-lg border border-red-200 flex items-center gap-1 cursor-pointer transition-all"
+                                      title="ลบรูปโปรไฟล์ออก"
                                     >
-                                      ลบรูปโปรไฟล์
+                                      <Trash2 className="h-3 w-3" />
+                                      <span>ลบรูปโปรไฟล์</span>
                                     </button>
                                   )}
                                 </div>
@@ -1318,7 +1431,7 @@ export default function CustomerPortal({
                                         <p className="text-[10px] text-natural-espresso/45 font-bold mb-1 uppercase tracking-wider">รูปภาพแบบชุดอ้างอิง</p>
                                         <div className={`grid ${resolvedImg && order.customImage2 ? 'grid-cols-2' : 'grid-cols-1'} gap-2`}>
                                           {resolvedImg && (
-                                            <div className="relative rounded-lg overflow-hidden border border-natural-wheat h-28 bg-natural-sand/5 flex items-center justify-center">
+                                            <div className="relative group rounded-lg overflow-hidden border border-natural-wheat h-28 bg-natural-sand/5 flex items-center justify-center">
                                               <img 
                                                 src={resolvedImg} 
                                                 alt="Design Reference 1" 
@@ -1331,10 +1444,20 @@ export default function CustomerPortal({
                                                   }
                                                 }}
                                               />
+                                              {order.customImage && (
+                                                <button
+                                                  type="button"
+                                                  onClick={() => handleDeleteOrderPhoto(order.id, 'customImage')}
+                                                  className="absolute top-1 right-1 p-1 bg-red-500/90 hover:bg-red-600 text-white rounded-full transition-all cursor-pointer shadow-sm z-10"
+                                                  title="ลบรูปภาพแบบชุดช่องที่ 1"
+                                                >
+                                                  <Trash2 className="h-3 w-3" />
+                                                </button>
+                                              )}
                                             </div>
                                           )}
                                           {order.customImage2 && (
-                                            <div className="relative rounded-lg overflow-hidden border border-natural-wheat h-28 bg-natural-sand/5 flex items-center justify-center">
+                                            <div className="relative group rounded-lg overflow-hidden border border-natural-wheat h-28 bg-natural-sand/5 flex items-center justify-center">
                                               <img 
                                                 src={order.customImage2} 
                                                 alt="Design Reference 2" 
@@ -1347,6 +1470,14 @@ export default function CustomerPortal({
                                                   }
                                                 }}
                                               />
+                                              <button
+                                                type="button"
+                                                onClick={() => handleDeleteOrderPhoto(order.id, 'customImage2')}
+                                                className="absolute top-1 right-1 p-1 bg-red-500/90 hover:bg-red-600 text-white rounded-full transition-all cursor-pointer shadow-sm z-10"
+                                                title="ลบรูปภาพแบบชุดช่องที่ 2"
+                                              >
+                                                <Trash2 className="h-3 w-3" />
+                                              </button>
                                             </div>
                                           )}
                                         </div>
@@ -1355,8 +1486,19 @@ export default function CustomerPortal({
                                   })()}
                                   {order.slipImage && (
                                     <div className="mt-2.5 pt-2.5 border-t border-natural-sand/60">
-                                      <p className="text-[10px] text-natural-espresso/45 font-bold mb-1 uppercase tracking-wider">หลักฐานการชำระเงิน (สลิปโอนเงิน)</p>
-                                      <div className="relative rounded-lg overflow-hidden border border-natural-wheat h-28 bg-natural-sand/5 flex items-center justify-center">
+                                      <div className="flex justify-between items-center mb-1">
+                                        <p className="text-[10px] text-natural-espresso/45 font-bold uppercase tracking-wider">หลักฐานการชำระเงิน (สลิปโอนเงิน)</p>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleDeleteOrderPhoto(order.id, 'slipImage')}
+                                          className="text-[10px] text-red-500 hover:text-red-700 font-bold flex items-center gap-0.5 cursor-pointer"
+                                          title="ลบรูปสลิปการชำระเงิน"
+                                        >
+                                          <Trash2 className="h-3 w-3" />
+                                          <span>ลบสลิป</span>
+                                        </button>
+                                      </div>
+                                      <div className="relative group rounded-lg overflow-hidden border border-natural-wheat h-28 bg-natural-sand/5 flex items-center justify-center">
                                         <img 
                                           src={order.slipImage} 
                                           alt="Payment Slip" 
@@ -1369,6 +1511,14 @@ export default function CustomerPortal({
                                             }
                                           }}
                                         />
+                                        <button
+                                          type="button"
+                                          onClick={() => handleDeleteOrderPhoto(order.id, 'slipImage')}
+                                          className="absolute top-1 right-1 p-1 bg-red-500/90 hover:bg-red-600 text-white rounded-full transition-all cursor-pointer shadow-sm z-10"
+                                          title="ลบสลิปโอนเงิน"
+                                        >
+                                          <Trash2 className="h-3 w-3" />
+                                        </button>
                                       </div>
                                     </div>
                                   )}

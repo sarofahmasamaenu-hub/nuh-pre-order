@@ -30,9 +30,13 @@ import {
   CreditCard,
   Copy,
   Send,
-  Share2
+  Share2,
+  Camera,
+  Upload,
+  Trash2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { compressImage } from '../utils/image';
 
 interface CustomerDashboardProps {
   orders: Order[];
@@ -75,6 +79,43 @@ export default function CustomerDashboard({
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerProfile | null>(null);
   const [copiedMeasurements, setCopiedMeasurements] = useState<boolean>(false);
   const [copiedLineDashboard, setCopiedLineDashboard] = useState<boolean>(false);
+  const [avatarVersion, setAvatarVersion] = useState<number>(0);
+  const dashboardAvatarInputRef = React.useRef<HTMLInputElement>(null);
+
+  // Avatar helper functions
+  const getCustomerAvatar = (phone?: string): string => {
+    if (!phone) return '';
+    const cleanPhone = phone.replace(/\D/g, '');
+    if (!cleanPhone) return '';
+    return localStorage.getItem(`nunuh_customer_avatar_${cleanPhone}`) || '';
+  };
+
+  const handleDashboardAvatarUpload = async (phone: string, e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const cleanPhone = phone.replace(/\D/g, '');
+    if (!cleanPhone) {
+      alert('ไม่พบเบอร์โทรศัพท์สำหรับผูกรูปโปรไฟล์ลูกค้า');
+      return;
+    }
+
+    try {
+      const base64 = await compressImage(file, 400, 400, 0.8);
+      localStorage.setItem(`nunuh_customer_avatar_${cleanPhone}`, base64);
+      setAvatarVersion(v => v + 1);
+    } catch (err) {
+      alert('เกิดข้อผิดพลาดในการประมวลผลรูปภาพ');
+    }
+  };
+
+  const handleDashboardRemoveAvatar = (phone: string) => {
+    const cleanPhone = phone.replace(/\D/g, '');
+    if (!cleanPhone) return;
+    if (confirm('คุณต้องการลบรูปโปรไฟล์ลูกค้ารายนี้ใช่หรือไม่?')) {
+      localStorage.removeItem(`nunuh_customer_avatar_${cleanPhone}`);
+      setAvatarVersion(v => v + 1);
+    }
+  };
 
   // Group orders into unique customer profiles
   const customerProfiles = useMemo(() => {
@@ -512,6 +553,8 @@ export default function CustomerDashboard({
             const hasIdd = profile.categories.includes('IDD');
             const hasIdh = profile.categories.includes('IDH');
 
+            const cardAvatar = getCustomerAvatar(profile.phone);
+
             return (
               <motion.div
                 key={profile.name + profile.phone}
@@ -526,8 +569,12 @@ export default function CustomerDashboard({
                   <div className="flex items-start justify-between">
                     <div className="flex items-center space-x-3 min-w-0">
                       {/* Avatar */}
-                      <div className="w-10 h-10 rounded-full bg-natural-sand text-natural-espresso border border-natural-wheat flex items-center justify-center font-serif font-bold text-sm shrink-0 uppercase">
-                        {profile.name ? profile.name.replace('คุณ', '').trim().substring(0, 2) : 'LC'}
+                      <div className="w-10 h-10 rounded-full bg-natural-sand text-natural-espresso border border-natural-wheat flex items-center justify-center font-serif font-bold text-sm shrink-0 uppercase overflow-hidden">
+                        {cardAvatar ? (
+                          <img src={cardAvatar} alt={profile.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                        ) : (
+                          profile.name ? profile.name.replace('คุณ', '').trim().substring(0, 2) : 'LC'
+                        )}
                       </div>
                       
                       {/* Name / Phone */}
@@ -647,24 +694,83 @@ export default function CustomerDashboard({
               
               {/* Sticky Modal Header */}
               <div className="bg-white px-6 py-4 border-b border-natural-wheat flex justify-between items-center sticky top-0 z-20">
-                <div className="flex items-center space-x-3.5">
-                  <div className="w-12 h-12 rounded-full bg-natural-clay/10 text-natural-clay border border-natural-clay/20 flex items-center justify-center font-serif font-extrabold text-base">
-                    {selectedCustomer.name ? selectedCustomer.name.replace('คุณ', '').trim().substring(0, 2) : 'LC'}
-                  </div>
-                  <div>
-                    <h3 className="font-serif font-black text-base text-natural-espresso">
-                      ประวัติการสั่งตัดเสื้อผ้าของคุณ {selectedCustomer.name.replace('คุณ', '').trim()}
-                    </h3>
+                {/* Hidden File Input for Dashboard Avatar Upload */}
+                <input 
+                  type="file" 
+                  ref={dashboardAvatarInputRef} 
+                  accept="image/*" 
+                  onChange={(e) => selectedCustomer.phone && handleDashboardAvatarUpload(selectedCustomer.phone, e)} 
+                  className="hidden" 
+                />
+
+                <div className="flex items-center space-x-3.5 min-w-0">
+                  {/* Interactive Avatar */}
+                  {(() => {
+                    const currentAvatar = getCustomerAvatar(selectedCustomer.phone);
+                    return (
+                      <div className="relative group shrink-0">
+                        <div className="w-12 h-12 rounded-full bg-natural-clay/10 text-natural-clay border border-natural-clay/20 flex items-center justify-center font-serif font-extrabold text-base overflow-hidden">
+                          {currentAvatar ? (
+                            <img src={currentAvatar} alt={selectedCustomer.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                          ) : (
+                            selectedCustomer.name ? selectedCustomer.name.replace('คุณ', '').trim().substring(0, 2) : 'LC'
+                          )}
+                        </div>
+
+                        {/* Upload overlay */}
+                        <button
+                          type="button"
+                          onClick={() => dashboardAvatarInputRef.current?.click()}
+                          className="absolute inset-0 bg-black/40 text-white opacity-0 group-hover:opacity-100 transition-opacity rounded-full flex items-center justify-center cursor-pointer"
+                          title="คลิกเพื่ออัปโหลด/เปลี่ยนรูปโปรไฟล์ลูกค้า"
+                        >
+                          <Camera className="h-4 w-4" />
+                        </button>
+                      </div>
+                    );
+                  })()}
+
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-serif font-black text-base text-natural-espresso truncate">
+                        ประวัติการสั่งตัดเสื้อผ้าของคุณ {selectedCustomer.name.replace('คุณ', '').trim()}
+                      </h3>
+
+                      {/* Photo Action Buttons */}
+                      <button
+                        type="button"
+                        onClick={() => dashboardAvatarInputRef.current?.click()}
+                        className="text-[10px] bg-natural-clay/10 hover:bg-natural-clay/20 text-natural-clay font-bold px-2 py-0.5 rounded-md flex items-center gap-1 cursor-pointer transition-all shrink-0"
+                        title="อัปโหลด/เปลี่ยนรูปโปรไฟล์"
+                      >
+                        <Camera className="h-3 w-3" />
+                        <span>{getCustomerAvatar(selectedCustomer.phone) ? 'เปลี่ยนรูป' : 'ใส่รูปโปรไฟล์'}</span>
+                      </button>
+
+                      {getCustomerAvatar(selectedCustomer.phone) && (
+                        <button
+                          type="button"
+                          onClick={() => handleDashboardRemoveAvatar(selectedCustomer.phone)}
+                          className="text-[10px] bg-red-50 hover:bg-red-100 text-red-600 font-bold px-2 py-0.5 rounded-md flex items-center gap-1 cursor-pointer transition-all shrink-0"
+                          title="ลบรูปโปรไฟล์ลูกค้า"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                          <span>ลบรูป</span>
+                        </button>
+                      )}
+                    </div>
+
                     <p className="text-xs text-natural-espresso/60 flex items-center gap-1.5 mt-0.5">
                       <span>📱 {selectedCustomer.phone || 'ไม่ระบุโทรศัพท์'}</span>
                       {selectedCustomer.social && <span>| 💬 {selectedCustomer.social}</span>}
                     </p>
                   </div>
                 </div>
+
                 <button
                   type="button"
                   onClick={() => setSelectedCustomer(null)}
-                  className="p-1.5 bg-stone-100 hover:bg-stone-200 rounded-full text-stone-500 cursor-pointer transition-all"
+                  className="p-1.5 bg-stone-100 hover:bg-stone-200 rounded-full text-stone-500 cursor-pointer transition-all shrink-0"
                 >
                   <X className="h-4 w-4" />
                 </button>
