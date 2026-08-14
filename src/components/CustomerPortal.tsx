@@ -37,6 +37,7 @@ import {
 import PrintOrderModal from './PrintOrderModal';
 import FeedbackSection from './FeedbackSection';
 import { compressImage } from '../utils/image';
+import { getDaysDifference } from '../utils/dateDuration';
 
 interface CustomerPortalProps {
   orders: Order[];
@@ -1376,7 +1377,7 @@ export default function CustomerPortal({
                                     </span>
                                     <div>
                                       <p className="text-[10px] font-bold text-natural-espresso/60 uppercase tracking-wider">
-                                        สถานะปัจจุบัน (ขั้นตอนที่ {Math.max(1, PRODUCTION_PIPELINE_STEPS.indexOf(order.status as OrderStatus) + 1)} จาก {PRODUCTION_PIPELINE_STEPS.length})
+                                        สถานะปัจจุบัน
                                       </p>
                                       <p className="text-sm font-extrabold text-natural-espresso">
                                         {STATUS_MAP[order.status]?.label || order.status}
@@ -1395,66 +1396,55 @@ export default function CustomerPortal({
                                     {currentStatus.description}
                                   </p>
                                 </div>
-
-                                {/* Optional Collapsible: View all 22 steps as a selector/reference */}
-                                <details className="group border-t border-natural-wheat/40 pt-2">
-                                  <summary className="text-[11px] font-bold text-natural-clay hover:text-natural-espresso cursor-pointer flex items-center justify-between list-none">
-                                    <span>📋 ดูลำดับ 22 ขั้นตอนการผลิตทั้งหมด</span>
-                                    <span className="text-xs transition-transform group-open:rotate-180">▼</span>
-                                  </summary>
-                                  <div className="mt-2.5 grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-56 overflow-y-auto pr-1 text-xs">
-                                    {PRODUCTION_PIPELINE_STEPS.map((statusKey, stepIdx) => {
-                                      const cfg = STATUS_MAP[statusKey];
-                                      const isCurrent = order.status === statusKey;
-                                      const currentIdx = PRODUCTION_PIPELINE_STEPS.indexOf(order.status as OrderStatus);
-                                      const isPassed = currentIdx > stepIdx;
-
-                                      return (
-                                        <div 
-                                          key={statusKey}
-                                          className={`p-2 rounded-lg border text-left flex items-center justify-between text-[11px] ${
-                                            isCurrent 
-                                              ? 'bg-natural-espresso text-natural-cream font-bold border-natural-espresso shadow-xs' 
-                                              : isPassed 
-                                                ? 'bg-natural-sand/40 border-natural-wheat text-natural-espresso/70' 
-                                                : 'bg-white/60 border-natural-wheat/40 text-natural-espresso/40'
-                                          }`}
-                                        >
-                                          <span className="truncate pr-2">
-                                            {stepIdx + 1}. {cfg?.label || statusKey}
-                                          </span>
-                                          <span className="text-[9px] shrink-0 font-medium opacity-80">
-                                            {isCurrent ? '● กำลังทำ' : isPassed ? '✓ เสร็จแล้ว' : '○ รอ'}
-                                          </span>
-                                        </div>
-                                      );
-                                    })}
-                                  </div>
-                                </details>
                               </div>
 
                               {/* Status History Logs for Customer */}
                               {order.statusHistory && order.statusHistory.length > 0 && (
-                                <div className="bg-natural-sand/15 border border-natural-wheat/70 rounded-xl p-3.5 space-y-2">
-                                  <p className="text-xs font-bold text-natural-espresso flex items-center gap-1.5">
-                                    <History className="h-3.5 w-3.5 text-natural-clay" /> ไทม์ไลน์ประวัติการอัปเดตงาน (Production Progress Timeline)
-                                  </p>
-                                  <div className="space-y-1.5 max-h-48 overflow-y-auto">
-                                    {order.statusHistory.map((h, hIdx) => (
-                                      <div key={hIdx} className="flex items-start justify-between text-[11px] bg-white/80 p-2 rounded-lg border border-natural-wheat/40">
-                                        <div>
-                                          <span className="font-bold text-natural-espresso">
-                                            {STATUS_MAP[h.status as OrderStatus]?.label || h.status}
+                                <div className="bg-natural-sand/15 border border-natural-wheat/70 rounded-xl p-3.5 space-y-2.5">
+                                  <div className="flex items-center justify-between">
+                                    <p className="text-xs font-bold text-natural-espresso flex items-center gap-1.5">
+                                      <History className="h-3.5 w-3.5 text-natural-clay" /> ไทม์ไลน์ประวัติการอัปเดตงาน (Production Progress Timeline)
+                                    </p>
+                                    <span className="text-[10px] text-natural-espresso/60 font-mono">
+                                      รวม {getDaysDifference(order.orderDate, order.status === OrderStatus.COMPLETED ? (order.statusDate || new Date().toISOString().split('T')[0]) : new Date().toISOString().split('T')[0])} วัน
+                                    </span>
+                                  </div>
+                                  <div className="space-y-1.5 max-h-52 overflow-y-auto">
+                                    {order.statusHistory.map((h, hIdx) => {
+                                      const isLast = hIdx === order.statusHistory!.length - 1;
+                                      const todayStr = new Date().toISOString().split('T')[0];
+                                      const nextDate = isLast
+                                        ? (order.status === OrderStatus.COMPLETED ? (order.statusDate || h.date) : todayStr)
+                                        : order.statusHistory![hIdx + 1].date;
+                                      const daysInStage = getDaysDifference(h.date, nextDate);
+
+                                      return (
+                                        <div key={hIdx} className="flex flex-col sm:flex-row sm:items-center justify-between text-[11px] bg-white/90 p-2.5 rounded-lg border border-natural-wheat/40 gap-1.5">
+                                          <div>
+                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                              <span className="font-bold text-natural-espresso">
+                                                {STATUS_MAP[h.status as OrderStatus]?.label || h.status}
+                                              </span>
+                                              <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
+                                                isLast 
+                                                  ? (order.status === OrderStatus.COMPLETED ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-900')
+                                                  : 'bg-natural-sand/50 text-natural-espresso/70'
+                                              }`}>
+                                                {isLast 
+                                                  ? (order.status === OrderStatus.COMPLETED ? `เสร็จสิ้น (${daysInStage} วัน)` : `ปัจจุบัน (${daysInStage} วัน)`)
+                                                  : `${daysInStage} วัน`}
+                                              </span>
+                                            </div>
+                                            {h.note && (
+                                              <p className="text-[10px] text-natural-espresso/70 mt-0.5">{h.note}</p>
+                                            )}
+                                          </div>
+                                          <span className="text-[10px] font-mono text-natural-espresso/60 shrink-0">
+                                            📅 {h.date} {isLast ? '' : `➔ ${order.statusHistory![hIdx + 1].date}`}
                                           </span>
-                                          {h.note && (
-                                            <p className="text-[10px] text-natural-espresso/70 mt-0.5">{h.note}</p>
-                                          )}
                                         </div>
-                                        <span className="text-[10px] font-mono text-natural-espresso/60 shrink-0 ml-2">
-                                          📅 {h.date}
-                                        </span>
-                                      </div>
-                                    ))}
+                                      );
+                                    })}
                                   </div>
                                 </div>
                               )}

@@ -44,6 +44,7 @@ import PrintOrderModal from './PrintOrderModal';
 import EditOrderModal from './EditOrderModal';
 import FeedbackSection from './FeedbackSection';
 import SignatureModal from './SignatureModal';
+import { getDaysDifference, formatStatusDurationTimeline } from '../utils/dateDuration';
 
 interface OrderTrackerProps {
   orders: Order[];
@@ -61,6 +62,7 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
   const [printingOrder, setPrintingOrder] = useState<Order | null>(null);
   const [showExportModal, setShowExportModal] = useState(false);
+  const [exportTab, setExportTab] = useState<'master' | 'transitions'>('master');
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
   const [signatureModalOrder, setSignatureModalOrder] = useState<Order | null>(null);
 
@@ -598,10 +600,13 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
       'ประเภทชุด',
       'เนื้อผ้า',
       'เฉดสี',
-      'สถานะ',
+      'สถานะปัจจุบัน',
       'วันที่เปลี่ยนสถานะล่าสุด',
+      'จำนวนวันในสถานะปัจจุบัน (วัน)',
       'วันที่สั่งซื้อ',
       'กำหนดส่ง',
+      'ระยะเวลารวมตั้งแต่สั่งตัด (วัน)',
+      'สรุปไทม์ไลน์และระยะเวลากี่วันในแต่ละสถานะ',
       'ราคา',
       'ส่วนลด',
       'มัดจำ',
@@ -624,6 +629,8 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
       'บันทึกเพิ่มเติม'
     ];
 
+    const todayStr = new Date().toISOString().split('T')[0];
+
     const rows = orders.map(o => {
       const unpaid = Math.max(0, o.price - (o.discount || 0) - o.deposit - (o.finalPaymentAmount || 0));
       const unpaidDisplay = unpaid > 0 ? unpaid : 'ชำระเรียบร้อย';
@@ -643,6 +650,13 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
         pm = 'บัตรเครดิต';
       }
 
+      const daysInCurrentStatus = getDaysDifference(o.statusDate || o.orderDate, todayStr);
+      const totalLeadDays = getDaysDifference(
+        o.orderDate, 
+        o.status === OrderStatus.COMPLETED ? (o.statusDate || todayStr) : todayStr
+      );
+      const timelineDurationStr = formatStatusDurationTimeline(o);
+
       return [
         o.orderNumber,
         o.branch || 'สาขานราธิวาส',
@@ -657,8 +671,11 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
         o.fabricColor || '-',
         STATUS_MAP[o.status]?.label || o.status,
         o.statusDate || o.orderDate,
+        daysInCurrentStatus,
         o.orderDate,
         o.deliveryDate,
+        totalLeadDays,
+        timelineDurationStr,
         o.price,
         o.discount || 0,
         o.deposit,
@@ -688,10 +705,12 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
   const downloadCSV = () => {
     const headers = [
       'Order Number', 'Branch', 'Customer Name', 'Phone', 'Social Contact', 'Job Type', 'Membership Card Type', 'External Order ID', 'Dress Type', 
-      'Fabric Type', 'Fabric Color', 'Status', 'Status Date', 'Order Date', 'Delivery Date', 
+      'Fabric Type', 'Fabric Color', 'Status', 'Status Date', 'Days in Current Status', 'Order Date', 'Delivery Date', 'Total Days Since Order', 'Status Duration Timeline',
       'Price', 'Discount', 'Deposit', 'Payment Method', 'Unpaid Balance', 'Chest', 'Waist', 'Hips', 
       'Shoulder', 'Sleeve Length', 'Armhole', 'Dress Length', 'Height', 'Weight', 'Front Chest', 'Back Chest', 'Front Length', 'Back Length', 'Wrist', 'Other Notes'
     ];
+
+    const todayStr = new Date().toISOString().split('T')[0];
 
     const rows = orders.map(o => {
       const unpaid = Math.max(0, o.price - (o.discount || 0) - o.deposit - (o.finalPaymentAmount || 0));
@@ -712,6 +731,13 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
         pm = 'บัตรเครดิต';
       }
 
+      const daysInCurrentStatus = getDaysDifference(o.statusDate || o.orderDate, todayStr);
+      const totalLeadDays = getDaysDifference(
+        o.orderDate, 
+        o.status === OrderStatus.COMPLETED ? (o.statusDate || todayStr) : todayStr
+      );
+      const timelineDurationStr = formatStatusDurationTimeline(o);
+
       return [
         `"${o.orderNumber}"`,
         `"${o.branch || 'สาขานราธิวาส'}"`,
@@ -726,8 +752,11 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
         `"${(o.fabricColor || '-').replace(/"/g, '""')}"`,
         `"${STATUS_MAP[o.status]?.label || o.status}"`,
         `"${o.statusDate || o.orderDate}"`,
+        `${daysInCurrentStatus}`,
         `"${o.orderDate}"`,
         `"${o.deliveryDate}"`,
+        `${totalLeadDays}`,
+        `"${timelineDurationStr.replace(/"/g, '""')}"`,
         o.price,
         o.discount || 0,
         o.deposit,
@@ -757,6 +786,137 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
     const link = document.createElement('a');
     link.href = url;
     link.setAttribute('download', `NUNUH_Orders_Export_${new Date().toISOString().slice(0,10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // ตารางประวัติและระยะเวลาการเปลี่ยนสถานะรายขั้นตอน (Status Transition & Duration Logs)
+  const generateTransitionsTSV = () => {
+    const headers = [
+      'หมายเลขออเดอร์',
+      'สาขา',
+      'ชื่อลูกค้า',
+      'เบอร์โทรศัพท์',
+      'ประเภทชุด',
+      'วันที่สั่งซื้อ',
+      'กำหนดส่ง',
+      'ลำดับขั้นตอน',
+      'สถานะ / ขั้นตอนการทำงาน',
+      'วันที่เริ่มต้นสถานะนี้',
+      'วันที่เปลี่ยนสู่สถานะถัดไป / ปัจจุบัน',
+      'ระยะเวลาที่ใช้ในสถานะนี้ (วัน)',
+      'สถานะของขั้นตอนนี้',
+      'ผู้บันทึก',
+      'หมายเหตุ'
+    ];
+
+    const rows: (string | number)[][] = [];
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    orders.forEach(o => {
+      const history = (o.statusHistory && o.statusHistory.length > 0)
+        ? o.statusHistory
+        : [{
+            status: o.status,
+            date: o.statusDate || o.orderDate,
+            note: o.notes || '',
+            updatedBy: o.staffName || 'พนักงาน'
+          }];
+
+      history.forEach((h, idx) => {
+        const isLast = idx === history.length - 1;
+        const nextDate = isLast
+          ? (o.status === OrderStatus.COMPLETED ? (o.statusDate || h.date) : todayStr)
+          : history[idx + 1].date;
+
+        const days = getDaysDifference(h.date, nextDate);
+        const statusLabel = STATUS_MAP[h.status as OrderStatus]?.label || h.status;
+        const progressLabel = isLast
+          ? (o.status === OrderStatus.COMPLETED ? 'เสร็จสิ้นสมบูรณ์' : 'กำลังดำเนินการ (สถานะปัจจุบัน)')
+          : 'ผ่านขั้นตอนนี้แล้ว';
+
+        rows.push([
+          o.orderNumber,
+          o.branch || 'สาขานราธิวาส',
+          o.customerName,
+          o.customerPhone,
+          o.dressType,
+          o.orderDate,
+          o.deliveryDate,
+          idx + 1,
+          statusLabel,
+          h.date,
+          nextDate,
+          days,
+          progressLabel,
+          h.updatedBy || o.staffName || '-',
+          (h.note || '-').replace(/[\r\n\t]/g, ' ')
+        ]);
+      });
+    });
+
+    return [headers.join('\t'), ...rows.map(row => row.join('\t'))].join('\n');
+  };
+
+  const downloadTransitionsCSV = () => {
+    const headers = [
+      'Order Number', 'Branch', 'Customer Name', 'Phone', 'Dress Type', 'Order Date', 'Delivery Date',
+      'History Sequence', 'Status / Stage', 'Stage Start Date', 'Stage End Date / Transition Date',
+      'Duration (Days)', 'Stage Status', 'Updated By', 'Notes'
+    ];
+
+    const rows: string[][] = [];
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    orders.forEach(o => {
+      const history = (o.statusHistory && o.statusHistory.length > 0)
+        ? o.statusHistory
+        : [{
+            status: o.status,
+            date: o.statusDate || o.orderDate,
+            note: o.notes || '',
+            updatedBy: o.staffName || 'พนักงาน'
+          }];
+
+      history.forEach((h, idx) => {
+        const isLast = idx === history.length - 1;
+        const nextDate = isLast
+          ? (o.status === OrderStatus.COMPLETED ? (o.statusDate || h.date) : todayStr)
+          : history[idx + 1].date;
+
+        const days = getDaysDifference(h.date, nextDate);
+        const statusLabel = STATUS_MAP[h.status as OrderStatus]?.label || h.status;
+        const progressLabel = isLast
+          ? (o.status === OrderStatus.COMPLETED ? 'เสร็จสิ้นสมบูรณ์' : 'กำลังดำเนินการ (สถานะปัจจุบัน)')
+          : 'ผ่านขั้นตอนนี้แล้ว';
+
+        rows.push([
+          `"${o.orderNumber}"`,
+          `"${o.branch || 'สาขานราธิวาส'}"`,
+          `"${o.customerName.replace(/"/g, '""')}"`,
+          `"${o.customerPhone}"`,
+          `"${o.dressType.replace(/"/g, '""')}"`,
+          `"${o.orderDate}"`,
+          `"${o.deliveryDate}"`,
+          `${idx + 1}`,
+          `"${statusLabel.replace(/"/g, '""')}"`,
+          `"${h.date}"`,
+          `"${nextDate}"`,
+          `${days}`,
+          `"${progressLabel}"`,
+          `"${(h.updatedBy || o.staffName || '-').replace(/"/g, '""')}"`,
+          `"${(h.note || '-').replace(/"/g, '""').replace(/[\r\n]/g, ' ')}"`
+        ]);
+      });
+    });
+
+    const content = '\uFEFF' + [headers.join(','), ...rows.map(row => row.join(','))].join('\r\n');
+    const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `NUNUH_Status_Durations_Log_${new Date().toISOString().slice(0,10)}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -1515,31 +1675,65 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
                       )}
                     </div>
 
-                    {/* Status History Timeline Log */}
+                    {/* Status History Timeline Log with Stage Durations */}
                     {order.statusHistory && order.statusHistory.length > 0 && (
-                      <div className="bg-natural-cream/30 border border-natural-wheat/80 rounded-2xl p-4 space-y-2.5">
-                        <h6 className="text-xs font-bold text-natural-espresso flex items-center gap-1.5">
-                          <History className="h-3.5 w-3.5 text-natural-clay" /> ประวัติการเปลี่ยนสถานะ & บันทึกย้อนหลัง (Status History Logs)
-                        </h6>
-                        <div className="space-y-1.5">
-                          {order.statusHistory.map((h, hIdx) => (
-                            <div key={hIdx} className="flex items-start justify-between text-[11px] bg-white/90 p-2.5 rounded-xl border border-natural-wheat/50 shadow-3xs gap-2">
-                              <div className="space-y-0.5">
-                                <span className="font-bold text-natural-espresso">
-                                  {STATUS_MAP[h.status as OrderStatus]?.label || h.status}
-                                </span>
-                                {h.note && (
-                                  <p className="text-[10px] text-natural-espresso/70 italic">
-                                    หมายเหตุ: {h.note}
-                                  </p>
-                                )}
+                      <div className="bg-natural-cream/30 border border-natural-wheat/80 rounded-2xl p-4 space-y-3">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 border-b border-natural-sand/60 pb-2">
+                          <h6 className="text-xs font-bold text-natural-espresso flex items-center gap-1.5">
+                            <History className="h-3.5 w-3.5 text-natural-clay" /> ประวัติการเปลี่ยนสถานะ & ระยะเวลาแต่ละขั้นตอน (Status Duration Timeline)
+                          </h6>
+                          <div className="flex items-center gap-2 text-[10px] font-mono text-natural-espresso/70">
+                            <span className="bg-natural-sand/40 px-2.5 py-0.5 rounded-full font-bold">
+                              รวมตั้งแต่สั่งตัด: {getDaysDifference(order.orderDate, order.status === OrderStatus.COMPLETED ? (order.statusDate || new Date().toISOString().split('T')[0]) : new Date().toISOString().split('T')[0])} วัน
+                            </span>
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          {order.statusHistory.map((h, hIdx) => {
+                            const isLast = hIdx === order.statusHistory!.length - 1;
+                            const todayStr = new Date().toISOString().split('T')[0];
+                            const nextDate = isLast
+                              ? (order.status === OrderStatus.COMPLETED ? (order.statusDate || h.date) : todayStr)
+                              : order.statusHistory![hIdx + 1].date;
+                            const daysInStage = getDaysDifference(h.date, nextDate);
+
+                            return (
+                              <div key={hIdx} className="flex flex-col sm:flex-row sm:items-center justify-between text-[11px] bg-white/90 p-2.5 rounded-xl border border-natural-wheat/50 shadow-3xs gap-2">
+                                <div className="space-y-1 flex-1">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="font-bold text-natural-espresso">
+                                      {hIdx + 1}. {STATUS_MAP[h.status as OrderStatus]?.label || h.status}
+                                    </span>
+                                    <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full inline-flex items-center gap-1 ${
+                                      isLast 
+                                        ? (order.status === OrderStatus.COMPLETED 
+                                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' 
+                                            : 'bg-amber-100 text-amber-900 border border-amber-300 shadow-3xs')
+                                        : 'bg-natural-sand/50 text-natural-espresso/80 border border-natural-wheat/60'
+                                    }`}>
+                                      {isLast 
+                                        ? (order.status === OrderStatus.COMPLETED 
+                                            ? `✓ ใช้เวลา ${daysInStage} วัน (จบงาน)` 
+                                            : `⏳ อยู่ในขั้นตอนนี้มาแล้ว ${daysInStage} วัน (สถานะปัจจุบัน)`)
+                                        : `⏱️ ใช้เวลาในขั้นตอนนี้: ${daysInStage} วัน`
+                                      }
+                                    </span>
+                                  </div>
+                                  {h.note && (
+                                    <p className="text-[10px] text-natural-espresso/70 italic bg-natural-sand/20 px-2 py-0.5 rounded-md inline-block">
+                                      หมายเหตุ: {h.note}
+                                    </p>
+                                  )}
+                                </div>
+                                <div className="text-right shrink-0 text-[10px] text-natural-espresso/60 font-mono space-y-0.5">
+                                  <div>
+                                    📅 {h.date} {isLast ? (order.status === OrderStatus.COMPLETED ? '' : '➔ ปัจจุบัน') : `➔ ${order.statusHistory![hIdx + 1].date}`}
+                                  </div>
+                                  {h.updatedBy && <div className="text-[9px] text-natural-clay font-sans">ผู้บันทึก: {h.updatedBy}</div>}
+                                </div>
                               </div>
-                              <div className="text-right shrink-0 text-[10px] text-natural-espresso/60 font-mono">
-                                <div>📅 {h.date}</div>
-                                {h.updatedBy && <div className="text-[9px] text-natural-clay">โดย: {h.updatedBy}</div>}
-                              </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       </div>
                     )}
@@ -2306,7 +2500,7 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
       {/* Google Sheets Export Modal */}
       {showExportModal && (
         <div className="fixed inset-0 bg-natural-espresso/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-natural-wheat relative space-y-6">
+          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-natural-wheat relative space-y-5 max-h-[90vh] overflow-y-auto">
             <button
               type="button"
               onClick={() => setShowExportModal(false)}
@@ -2315,83 +2509,172 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
               ✕
             </button>
 
-            <div className="space-y-2">
-              <span className="text-[10px] uppercase font-bold tracking-widest text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full">
-                Google Sheets Integration
+            <div className="space-y-1.5">
+              <span className="text-[10px] uppercase font-bold tracking-widest text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full inline-block">
+                Google Sheets & Excel Integration
               </span>
               <h3 className="text-xl font-serif font-extrabold text-natural-espresso">
-                ส่งออกข้อมูลออเดอร์ไปยัง Google Sheets 📊
+                ส่งออกข้อมูลไปยัง Google Sheets 📊
               </h3>
-              <p className="text-xs text-natural-espresso/60">
-                เลือกรูปแบบที่ต้องการเพื่อนำข้อมูลออเดอร์ตัดเย็บทั้งหมดไปใส่ใน Google Sheets หรือแชร์กับทีมงาน
+              <p className="text-xs text-natural-espresso/70">
+                เลือกประเภทตารางที่ต้องการ เพื่อนำข้อมูลไปวางหรือดาวน์โหลดเข้า Google Sheets พร้อมคำนวณจำนวนวันที่ใช้ในแต่ละสถานะให้อัตโนมัติ
               </p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Option 1: Copy-Paste TSV */}
-              <div className="border border-natural-wheat hover:border-emerald-500/50 p-5 rounded-xl bg-natural-cream/10 space-y-3 transition-all flex flex-col justify-between">
-                <div className="space-y-1.5">
-                  <h4 className="font-bold text-sm text-emerald-800 flex items-center space-x-1.5">
-                    <span>📋 วิธีคัดลอก-วาง (แนะนำ)</span>
-                  </h4>
-                  <p className="text-xs text-natural-espresso/70 leading-relaxed">
-                    คัดลอกข้อมูลทั้งหมดในรูปแบบตารางเว้นวรรค (TSV) แล้วนำไปกด <strong>Ctrl + V</strong> หรือ <strong>Cmd + V</strong> ใน Google Sheets ได้ทันที ไม่ต้องเซฟไฟล์!
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    const tsv = generateTSV();
-                    await navigator.clipboard.writeText(tsv);
-                    alert('คัดลอกข้อมูลตารางเรียบร้อยแล้ว! สามารถเปิด Google Sheets แล้วกดปุ่มวาง (Ctrl+V) ได้เลยค่ะ');
-                  }}
-                  className="w-full py-2 bg-emerald-600 text-white font-bold text-xs rounded-lg hover:bg-emerald-700 transition-colors shadow-xs cursor-pointer"
-                >
-                  คัดลอกข้อมูลตาราง (Copy TSV)
-                </button>
-              </div>
-
-              {/* Option 2: Download CSV */}
-              <div className="border border-natural-wheat hover:border-emerald-500/50 p-5 rounded-xl bg-natural-cream/10 space-y-3 transition-all flex flex-col justify-between">
-                <div className="space-y-1.5">
-                  <h4 className="font-bold text-sm text-emerald-800 flex items-center space-x-1.5">
-                    <span>💾 ดาวน์โหลดไฟล์ CSV</span>
-                  </h4>
-                  <p className="text-xs text-natural-espresso/70 leading-relaxed">
-                    ดาวน์โหลดเป็นไฟล์ CSV (เข้ารหัสภาษาไทย) เพื่อนำไปกดนำเข้า (Import) ใน Google Sheets, Microsoft Excel หรือโปรแกรมอื่นๆ ได้อย่างสมบูรณ์แบบ
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    downloadCSV();
-                    alert('ดาวน์โหลดไฟล์ CSV เรียบร้อยแล้วค่ะ! ท่านสามารถอัปโหลดไฟล์นี้เข้า Google Sheets ได้เลย');
-                  }}
-                  className="w-full py-2 bg-neutral-800 text-white font-bold text-xs rounded-lg hover:bg-neutral-900 transition-colors shadow-xs cursor-pointer"
-                >
-                  ดาวน์โหลดไฟล์ CSV
-                </button>
-              </div>
+            {/* Tab Selection */}
+            <div className="flex rounded-xl bg-natural-sand/30 p-1 border border-natural-wheat/60 gap-1">
+              <button
+                type="button"
+                onClick={() => setExportTab('master')}
+                className={`flex-1 py-2 px-3 text-xs font-bold rounded-lg transition-all text-center cursor-pointer ${
+                  exportTab === 'master'
+                    ? 'bg-white text-emerald-900 shadow-xs border border-emerald-200'
+                    : 'text-natural-espresso/70 hover:text-natural-espresso'
+                }`}
+              >
+                📋 1. สรุปภาพรวมออเดอร์ & ไทม์ไลน์
+              </button>
+              <button
+                type="button"
+                onClick={() => setExportTab('transitions')}
+                className={`flex-1 py-2 px-3 text-xs font-bold rounded-lg transition-all text-center cursor-pointer ${
+                  exportTab === 'transitions'
+                    ? 'bg-white text-emerald-900 shadow-xs border border-emerald-200'
+                    : 'text-natural-espresso/70 hover:text-natural-espresso'
+                }`}
+              >
+                ⏱️ 2. ตารางระยะเวลาแต่ละสถานะ (รายขั้นตอน)
+              </button>
             </div>
 
+            {exportTab === 'master' ? (
+              <div className="space-y-4">
+                <div className="bg-natural-cream/20 p-3 rounded-xl border border-natural-wheat/70 text-xs text-natural-espresso/80 space-y-1">
+                  <p className="font-bold text-natural-espresso">📌 รายละเอียดตารางสรุปภาพรวมออเดอร์:</p>
+                  <p className="text-[11px] text-natural-espresso/70">
+                    แสดง 1 แถวต่อ 1 ออเดอร์ พร้อมข้อมูลลูกค้า สัดส่วน การชำระเงิน และมีคอลัมน์พิเศษ <strong>"จำนวนวันในสถานะปัจจุบัน"</strong>, <strong>"ระยะเวลารวมตั้งแต่สั่งตัด"</strong> และ <strong>"สรุปไทม์ไลน์และระยะเวลากี่วันในแต่ละสถานะ"</strong>
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  <div className="border border-natural-wheat hover:border-emerald-500/50 p-4 rounded-xl bg-white space-y-2.5 flex flex-col justify-between shadow-3xs">
+                    <div className="space-y-1">
+                      <h4 className="font-bold text-xs text-emerald-800 flex items-center gap-1.5">
+                        <span>📋 วิธีคัดลอก-วาง (เร็วที่สุด)</span>
+                      </h4>
+                      <p className="text-[11px] text-natural-espresso/70 leading-relaxed">
+                        คัดลอกตารางแล้วกด <strong>Ctrl + V</strong> หรือ <strong>Cmd + V</strong> ใน Google Sheets ได้ทันที
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const tsv = generateTSV();
+                        await navigator.clipboard.writeText(tsv);
+                        alert('คัดลอกข้อมูลตารางภาพรวมออเดอร์เรียบร้อยแล้วค่ะ! เปิด Google Sheets แล้วกดปุ่มวาง (Ctrl+V) ได้ทันที');
+                      }}
+                      className="w-full py-2 bg-emerald-600 text-white font-bold text-xs rounded-lg hover:bg-emerald-700 transition-colors shadow-xs cursor-pointer"
+                    >
+                      คัดลอกตารางภาพรวม (Copy TSV)
+                    </button>
+                  </div>
+
+                  <div className="border border-natural-wheat hover:border-emerald-500/50 p-4 rounded-xl bg-white space-y-2.5 flex flex-col justify-between shadow-3xs">
+                    <div className="space-y-1">
+                      <h4 className="font-bold text-xs text-emerald-800 flex items-center gap-1.5">
+                        <span>💾 ดาวน์โหลดไฟล์ CSV</span>
+                      </h4>
+                      <p className="text-[11px] text-natural-espresso/70 leading-relaxed">
+                        ดาวน์โหลดไฟล์ .CSV รองรับภาษาไทย นำเข้าสู่โปรแกรมจัดการข้อมูลได้สะดวก
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        downloadCSV();
+                        alert('ดาวน์โหลดไฟล์ CSV ตารางภาพรวมออเดอร์เรียบร้อยแล้วค่ะ!');
+                      }}
+                      className="w-full py-2 bg-natural-espresso text-white font-bold text-xs rounded-lg hover:bg-natural-clay transition-colors shadow-xs cursor-pointer"
+                    >
+                      ดาวน์โหลดไฟล์ CSV
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="bg-emerald-50/70 p-3 rounded-xl border border-emerald-200 text-xs text-emerald-950 space-y-1">
+                  <p className="font-bold">✨ รายละเอียดตารางวิเคราะห์ระยะเวลาการทำงาน (KPI Duration Log):</p>
+                  <p className="text-[11px] text-emerald-800/80 leading-relaxed">
+                    แตกบันทึกทุกขั้นตอนการตัดเย็บออกมาเป็นแถวอย่างชัดเจน เช่น <strong>รับออร์เดอร์ ➔ ซื้อผ้า ➔ ระหว่างการปัก (ใช้เวลา 4 วัน) ➔ ระหว่างการปักคริสตัล (ใช้เวลา 3 วัน)</strong> พร้อมระบุวันที่เริ่มต้นและวันที่ส่งต่อขั้นตอน เหมาะอย่างยิ่งสำหรับการคำนวณและวัดผลระยะเวลาทำงานของแต่ละช่าง/แผนก
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  <div className="border border-emerald-200 hover:border-emerald-500/50 p-4 rounded-xl bg-white space-y-2.5 flex flex-col justify-between shadow-3xs">
+                    <div className="space-y-1">
+                      <h4 className="font-bold text-xs text-emerald-800 flex items-center gap-1.5">
+                        <span>📋 วิธีคัดลอก-วาง (เร็วที่สุด)</span>
+                      </h4>
+                      <p className="text-[11px] text-natural-espresso/70 leading-relaxed">
+                        คัดลอกตารางระยะเวลารายขั้นตอน แล้วนำไปกด <strong>Ctrl + V</strong> ในแท็บใหม่ของ Google Sheets
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const tsv = generateTransitionsTSV();
+                        await navigator.clipboard.writeText(tsv);
+                        alert('คัดลอกข้อมูลตารางระยะเวลารายขั้นตอนเรียบร้อยแล้วค่ะ! เปิด Google Sheets แล้วกดปุ่มวาง (Ctrl+V) ได้ทันที');
+                      }}
+                      className="w-full py-2 bg-emerald-600 text-white font-bold text-xs rounded-lg hover:bg-emerald-700 transition-colors shadow-xs cursor-pointer"
+                    >
+                      คัดลอกตารางระยะเวลา (Copy TSV)
+                    </button>
+                  </div>
+
+                  <div className="border border-emerald-200 hover:border-emerald-500/50 p-4 rounded-xl bg-white space-y-2.5 flex flex-col justify-between shadow-3xs">
+                    <div className="space-y-1">
+                      <h4 className="font-bold text-xs text-emerald-800 flex items-center gap-1.5">
+                        <span>💾 ดาวน์โหลดไฟล์ CSV</span>
+                      </h4>
+                      <p className="text-[11px] text-natural-espresso/70 leading-relaxed">
+                        ดาวน์โหลดไฟล์ .CSV บันทึกระยะเวลารายขั้นตอน เพื่อสร้างแผนภูมิหรือสูตร SUM/AVERAGE ในชีต
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        downloadTransitionsCSV();
+                        alert('ดาวน์โหลดไฟล์ CSV ตารางระยะเวลารายขั้นตอนเรียบร้อยแล้วค่ะ!');
+                      }}
+                      className="w-full py-2 bg-natural-espresso text-white font-bold text-xs rounded-lg hover:bg-natural-clay transition-colors shadow-xs cursor-pointer"
+                    >
+                      ดาวน์โหลดไฟล์ CSV
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Instruction Steps */}
-            <div className="bg-emerald-50/50 rounded-xl p-4 border border-emerald-100 space-y-3">
-              <h5 className="font-bold text-xs text-emerald-800 uppercase tracking-wider">
-                💡 ขั้นตอนการนำเข้า Google Sheets อย่างง่าย:
+            <div className="bg-natural-cream/30 rounded-xl p-3.5 border border-natural-wheat space-y-2">
+              <h5 className="font-bold text-xs text-natural-espresso flex items-center gap-1.5">
+                💡 คำแนะนำการใช้งานกับ Google Sheets:
               </h5>
-              <ol className="text-xs text-natural-espresso/80 space-y-2 list-decimal pl-4 leading-relaxed">
-                <li>เปิดเว็บ <a href="https://sheets.google.com" target="_blank" rel="noreferrer" className="text-emerald-700 underline font-bold">sheets.google.com</a> และสร้างสเปรดชีตใหม่</li>
-                <li>คลิกที่ปุ่ม <strong>"คัดลอกข้อมูลตาราง (Copy TSV)"</strong> ด้านบน</li>
-                <li>คลิกเลือกช่อง <strong>A1</strong> (ช่องแรกซ้ายบนสุด) ใน Google Sheets ของท่าน</li>
-                <li>กดปุ่ม <strong>Ctrl + V</strong> (สำหรับ Windows) หรือ <strong>Cmd + V</strong> (สำหรับ Mac) บนคีย์บอร์ด ข้อมูลทั้งหมดจะแยกเป็นคอลัมน์ให้อย่างสวยงามทันที!</li>
+              <ol className="text-[11px] text-natural-espresso/80 space-y-1.5 list-decimal pl-4 leading-relaxed">
+                <li>เปิด <a href="https://sheets.google.com" target="_blank" rel="noreferrer" className="text-emerald-700 underline font-bold">sheets.google.com</a> แล้วสร้าง Sheet เปล่า</li>
+                <li>คลิกปุ่ม <strong>"คัดลอกข้อมูลตาราง (Copy TSV)"</strong> ด้านบน</li>
+                <li>คลิกที่ช่อง <strong>A1</strong> ใน Google Sheets แล้วกด <strong>Ctrl + V</strong> (หรือ Cmd + V)</li>
+                <li>หัวคอลัมน์ วันที่ และจำนวนวันจะถูกแยกช่องให้อัตโนมัติ สามารถนำไปเขียนสูตรคำนวณวันเฉลี่ยต่อขั้นตอนได้ทันที!</li>
               </ol>
             </div>
 
-            <div className="flex justify-end pt-2">
+            <div className="flex justify-end pt-1">
               <button
                 type="button"
                 onClick={() => setShowExportModal(false)}
-                className="px-4 py-2 bg-natural-sand hover:bg-natural-wheat text-natural-espresso font-bold text-xs rounded-lg transition-colors cursor-pointer"
+                className="px-5 py-2 bg-natural-sand hover:bg-natural-wheat text-natural-espresso font-bold text-xs rounded-xl transition-colors cursor-pointer"
               >
                 ปิดหน้าต่าง
               </button>
