@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Order, STATUS_MAP, STANDARD_SIZE_CHART, CatalogueItem } from '../types';
 import { INITIAL_CATALOGUE } from '../initialData';
-import { Printer, X, Scissors, User, Phone, Calendar, DollarSign, Sparkles, Receipt } from 'lucide-react';
+import { Printer, X, Scissors, User, Phone, Calendar, DollarSign, Sparkles, Receipt, CheckSquare, Square } from 'lucide-react';
 
 interface PrintOrderModalProps {
   order: Order | null;
@@ -18,6 +18,19 @@ export default function PrintOrderModal({ order, isOpen, onClose }: PrintOrderMo
   const [receiptPaymentType, setReceiptPaymentType] = useState<'deposit' | 'full'>(
     order.deposit > 0 && Math.max(0, order.price - order.deposit - (order.discount || 0)) > 0 ? 'deposit' : 'full'
   );
+  const [agreedTerms, setAgreedTerms] = useState<Record<number, boolean>>({
+    1: true,
+    2: true,
+    3: true,
+    4: true,
+  });
+
+  const toggleTerm = (index: number) => {
+    setAgreedTerms(prev => ({
+      ...prev,
+      [index]: !prev[index]
+    }));
+  };
 
   const discountVal = order.discount || 0;
   const finalPayVal = order.finalPaymentAmount || 0;
@@ -659,7 +672,7 @@ export default function PrintOrderModal({ order, isOpen, onClose }: PrintOrderMo
                 </div>
 
                 {/* Customer Body Photos Section (For tailors) */}
-                {(order.customerPhotoFront || order.customerPhotoSide || order.customerPhotoBack) && (
+                {(order.customerPhotoFront || order.customerPhotoSide || order.customerPhotoBack || order.customerPhotoExtra1 || order.customerPhotoExtra2) && (
                   <div className="py-4 border-b border-natural-sand text-xs customer-photos-section">
                     <h4 className="font-serif font-bold text-xs text-natural-espresso flex items-center mb-2">
                       📸 ภาพถ่ายสัดส่วนสรีระลูกค้า (Customer Body Proportions)
@@ -691,18 +704,108 @@ export default function PrintOrderModal({ order, isOpen, onClose }: PrintOrderMo
                           </div>
                         </div>
                       )}
+
+                      {order.customerPhotoExtra1 && (
+                        <div className="text-center space-y-1">
+                          <p className="text-[10px] text-natural-espresso/60 font-bold">ภาพเพิ่มเติม 1 (Extra 1)</p>
+                          <div className="border border-natural-wheat rounded-lg p-1 bg-natural-sand/5 flex items-center justify-center max-h-28 overflow-hidden">
+                            <img src={order.customerPhotoExtra1} alt="Extra View 1" className="max-h-24 object-contain rounded" referrerPolicy="no-referrer" />
+                          </div>
+                        </div>
+                      )}
+
+                      {order.customerPhotoExtra2 && (
+                        <div className="text-center space-y-1">
+                          <p className="text-[10px] text-natural-espresso/60 font-bold">ภาพเพิ่มเติม 2 (Extra 2)</p>
+                          <div className="border border-natural-wheat rounded-lg p-1 bg-natural-sand/5 flex items-center justify-center max-h-28 overflow-hidden">
+                            <img src={order.customerPhotoExtra2} alt="Extra View 2" className="max-h-24 object-contain rounded" referrerPolicy="no-referrer" />
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
 
                 {/* Terms and Signatures */}
                 <div className="pt-6 text-[10px] text-natural-espresso/60 space-y-8">
-                  <div className="bg-natural-sand/20 p-3 rounded-lg border border-natural-sand/50 leading-relaxed text-natural-espresso/70">
-                    <strong>เงื่อนไขการสั่งตัดและการรับชุด:</strong><br />
-                    1. ทางร้านขอสงวนสิทธิ์ไม่คืนเงินมัดจำในกรณีที่มีการยกเลิกออเดอร์โดยลูกค้า<br />
-                    2. ลูกค้าสามารถปรับแก้วัดตัว (Fitting) เพิ่มเติมได้ฟรี 1 ครั้งในวันนัดหมายก่อนรับสินค้า<br />
-                    3. กรุณาชำระยอดเงินคงเหลือสุทธิครบถ้วนก่อนรับชุดสั่งตัดของท่านออกไปจากสตูดิโอ<br />
-                    4. ไม่สามารถเปลี่ยนแบบหรือเปลี่ยนไซส์หลังจากยืนยันการสั่งตัดแล้ว
+                  <div className="bg-natural-sand/20 p-3.5 rounded-lg border border-natural-sand/60 leading-relaxed text-natural-espresso/80 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <strong className="text-natural-espresso block text-[10.5px]">เงื่อนไขการสั่งตัดและการรับชุด:</strong>
+                      <span className="text-[9px] text-natural-espresso/45 font-medium print:hidden">(คลิกกล่องข้อความเพื่อติ๊กถูก/ยกเลิก)</span>
+                    </div>
+                    <div className="space-y-2">
+                      {/* ข้อ 1 */}
+                      <div 
+                        onClick={() => toggleTerm(1)}
+                        className="flex items-start space-x-2 cursor-pointer hover:bg-natural-sand/20 p-1 rounded transition-colors group"
+                      >
+                        <div className="mt-0.5 shrink-0 text-natural-espresso/80 group-hover:text-natural-espresso">
+                          {agreedTerms[1] ? (
+                            <span className="inline-flex items-center justify-center w-3.5 h-3.5 border border-natural-espresso/70 bg-white rounded-xs text-[10px] font-bold text-natural-espresso">✓</span>
+                          ) : (
+                            <span className="inline-flex items-center justify-center w-3.5 h-3.5 border border-natural-espresso/40 bg-white rounded-xs"></span>
+                          )}
+                        </div>
+                        <p className="flex-1 text-[9.5px] leading-relaxed">
+                          <strong>การยกเลิกคำสั่งซื้อและการคืนเงินมัดจำ:</strong><br />
+                          กรณีผู้ใช้บริการขอยกเลิกคำสั่งซื้อ ผู้ให้บริการ ขอสงวนสิทธิ์ในการริบเงินมัดจำทั้งหมดที่ได้รับไว้แล้ว เว้นแต่กรณีที่การยกเลิกดังกล่าวเกิดขึ้นจากความผิดพลาด ความบกพร่อง หรือการไม่ปฏิบัติตามข้อตกลงของผู้ให้บริการ ผู้ให้บริการยินดีคืนเงินมัดจำให้แก่ผู้ใช้บริการเต็มจำนวน
+                        </p>
+                      </div>
+
+                      {/* ข้อ 2 */}
+                      <div 
+                        onClick={() => toggleTerm(2)}
+                        className="flex items-start space-x-2 cursor-pointer hover:bg-natural-sand/20 p-1 rounded transition-colors group"
+                      >
+                        <div className="mt-0.5 shrink-0 text-natural-espresso/80 group-hover:text-natural-espresso">
+                          {agreedTerms[2] ? (
+                            <span className="inline-flex items-center justify-center w-3.5 h-3.5 border border-natural-espresso/70 bg-white rounded-xs text-[10px] font-bold text-natural-espresso">✓</span>
+                          ) : (
+                            <span className="inline-flex items-center justify-center w-3.5 h-3.5 border border-natural-espresso/40 bg-white rounded-xs"></span>
+                          )}
+                        </div>
+                        <p className="flex-1 text-[9.5px] leading-relaxed">
+                          <strong>การปรับแก้ทรงและขนาดชุด (Fitting):</strong><br />
+                          ผู้ใช้บริการมีสิทธิ์ขอปรับแก้ทรงหรือขนาดชุด (Fitting) โดยไม่มีค่าใช้จ่ายเพิ่มเติมได้จำนวน 1 (หนึ่ง) ครั้ง ณ วันและเวลานัดหมายก่อนการรับมอบสินค้า ทั้งนี้ การปรับแก้ดังกล่าวต้องอยู่ภายใต้แพทเทิร์น โครงสร้าง และรูปแบบเดิมตามที่ได้ตกลงกันไว้เท่านั้น
+                        </p>
+                      </div>
+
+                      {/* ข้อ 3 */}
+                      <div 
+                        onClick={() => toggleTerm(3)}
+                        className="flex items-start space-x-2 cursor-pointer hover:bg-natural-sand/20 p-1 rounded transition-colors group"
+                      >
+                        <div className="mt-0.5 shrink-0 text-natural-espresso/80 group-hover:text-natural-espresso">
+                          {agreedTerms[3] ? (
+                            <span className="inline-flex items-center justify-center w-3.5 h-3.5 border border-natural-espresso/70 bg-white rounded-xs text-[10px] font-bold text-natural-espresso">✓</span>
+                          ) : (
+                            <span className="inline-flex items-center justify-center w-3.5 h-3.5 border border-natural-espresso/40 bg-white rounded-xs"></span>
+                          )}
+                        </div>
+                        <p className="flex-1 text-[9.5px] leading-relaxed">
+                          <strong>การชำระเงินและการรับมอบสินค้า:</strong><br />
+                          ผู้ให้บริการขอสงวนสิทธิ์ในการส่งมอบสินค้าจนกว่าผู้ใช้บริการจะทำการชำระเงินส่วนที่เหลือสุทธิครบถ้วนตามที่ระบุในข้อตกลง โดยผู้ใช้บริการจะสามารถรับมอบหรือนำสินค้าออกจากสตูดิโอได้ ต่อเมื่อได้ทำการชำระเงินครบถ้วนเรียบร้อยแล้วเท่านั้น
+                        </p>
+                      </div>
+
+                      {/* ข้อ 4 */}
+                      <div 
+                        onClick={() => toggleTerm(4)}
+                        className="flex items-start space-x-2 cursor-pointer hover:bg-natural-sand/20 p-1 rounded transition-colors group"
+                      >
+                        <div className="mt-0.5 shrink-0 text-natural-espresso/80 group-hover:text-natural-espresso">
+                          {agreedTerms[4] ? (
+                            <span className="inline-flex items-center justify-center w-3.5 h-3.5 border border-natural-espresso/70 bg-white rounded-xs text-[10px] font-bold text-natural-espresso">✓</span>
+                          ) : (
+                            <span className="inline-flex items-center justify-center w-3.5 h-3.5 border border-natural-espresso/40 bg-white rounded-xs"></span>
+                          )}
+                        </div>
+                        <p className="flex-1 text-[9.5px] leading-relaxed">
+                          <strong>การยืนยันรูปแบบและขนาดสินค้า:</strong><br />
+                          เมื่อผู้ใช้บริการได้แสดงเจตนายืนยันการสั่งตัดเรียบร้อยแล้ว ให้ถือว่ารูปแบบ สไตล์ วัสดุ และขนาด (Size) ตามที่ระบุไว้เป็นอันยุติ ผู้ใช้บริการจะไม่สามารถขอเปลี่ยนแปลงรายการดังกล่าวได้อีกไม่ว่ากรณีใดๆ
+                        </p>
+                      </div>
+                    </div>
                   </div>
 
                   {/* Signatures */}

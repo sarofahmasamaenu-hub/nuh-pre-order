@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Order, OrderStatus, CatalogueItem, CustomerReview } from './types';
+import { Order, OrderStatus, STATUS_MAP, CatalogueItem, CustomerReview } from './types';
 import { INITIAL_ORDERS, INITIAL_CATALOGUE, INITIAL_REVIEWS } from './initialData';
 import { playNewOrderSound } from './utils/sound';
 
@@ -761,8 +761,22 @@ export default function App() {
 
   // การเพิ่มออเดอร์ใหม่
   const handleAddOrder = (newOrder: Order) => {
-    const orderWithTime = { 
+    const todayStr = newOrder.statusDate || newOrder.orderDate || new Date().toISOString().split('T')[0];
+    const initialStatus = newOrder.status || OrderStatus.RECEIVED;
+    const initialHistory = newOrder.statusHistory && newOrder.statusHistory.length > 0
+      ? newOrder.statusHistory
+      : [{
+          status: initialStatus,
+          date: todayStr,
+          note: STATUS_MAP[initialStatus]?.label || 'รับออร์เดอร์จากลูกค้าพร้อมลงระบบ',
+          updatedBy: currentStaff?.name || newOrder.staffName || 'พนักงาน'
+        }];
+
+    const orderWithTime: Order = { 
       ...newOrder, 
+      status: initialStatus,
+      statusDate: todayStr,
+      statusHistory: initialHistory,
       staffName: currentStaff?.name || newOrder.staffName,
       branch: currentStaff?.branch || newOrder.branch,
       staffBranch: currentStaff?.branch || newOrder.staffBranch,
@@ -779,11 +793,33 @@ export default function App() {
     }
   };
 
-  // ปรับปรุงสถานะติดตามงาน (Update Status)
-  const handleUpdateOrderStatus = (orderId: string, nextStatus: OrderStatus) => {
+  // ปรับปรุงสถานะติดตามงาน (Update Status พร้อมบันทึกวันที่เปลี่ยนสถานะและประวัติ)
+  const handleUpdateOrderStatus = (
+    orderId: string, 
+    nextStatus: OrderStatus, 
+    customStatusDate?: string,
+    note?: string
+  ) => {
+    const todayStr = customStatusDate || new Date().toISOString().split('T')[0];
+    const staffLabel = currentStaff?.name || 'พนักงาน';
+    const statusLabel = STATUS_MAP[nextStatus]?.label || nextStatus;
+
     const updated = orders.map(o => {
       if (o.id === orderId) {
-        return { ...o, status: nextStatus, updatedAt: Date.now() };
+        const prevHistory = o.statusHistory || [];
+        const newHistoryEntry = {
+          status: nextStatus,
+          date: todayStr,
+          note: note || statusLabel,
+          updatedBy: staffLabel
+        };
+        return { 
+          ...o, 
+          status: nextStatus, 
+          statusDate: todayStr,
+          statusHistory: [...prevHistory, newHistoryEntry],
+          updatedAt: Date.now() 
+        };
       }
       return o;
     });
@@ -836,7 +872,29 @@ export default function App() {
 
   // แก้ไขรายละเอียดออเดอร์ทั้งหมด
   const handleUpdateOrder = (updatedOrder: Order) => {
-    const orderWithTime = { ...updatedOrder, updatedAt: Date.now() };
+    const existing = orders.find(o => o.id === updatedOrder.id);
+    let history = updatedOrder.statusHistory || existing?.statusHistory || [];
+    
+    // ถ้าสถานะเปลี่ยนแต่ยังไม่มีรายการบันทึกล่าสุดใน history ให้เพิ่มเข้าไป
+    if (existing && existing.status !== updatedOrder.status) {
+      const todayStr = updatedOrder.statusDate || new Date().toISOString().split('T')[0];
+      const statusLabel = STATUS_MAP[updatedOrder.status]?.label || updatedOrder.status;
+      history = [
+        ...history,
+        {
+          status: updatedOrder.status,
+          date: todayStr,
+          note: `อัปเดตผ่านหน้าแก้ไข: ${statusLabel}`,
+          updatedBy: currentStaff?.name || 'พนักงาน'
+        }
+      ];
+    }
+
+    const orderWithTime = { 
+      ...updatedOrder, 
+      statusHistory: history,
+      updatedAt: Date.now() 
+    };
     const updated = orders.map(o => o.id === updatedOrder.id ? orderWithTime : o);
     saveOrdersToStorage(updated);
   };

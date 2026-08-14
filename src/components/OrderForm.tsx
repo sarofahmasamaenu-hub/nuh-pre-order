@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Order, OrderStatus, STATUS_MAP, Measurements, CatalogueItem, STANDARD_SIZE_CHART } from '../types';
+import { Order, OrderStatus, STATUS_MAP, Measurements, CatalogueItem, STANDARD_SIZE_CHART, PRODUCTION_PIPELINE_STEPS } from '../types';
 import { Save, User, Sparkles, Ruler, CreditCard, ChevronRight, Check, Image as ImageIcon, UploadCloud, X, History, Database, MessageSquare, PenTool, Eraser, ShieldCheck, Lock } from 'lucide-react';
 import { compressImage } from '../utils/image';
 
@@ -87,6 +87,8 @@ export default function OrderForm({
   const [customerPhotoFront, setCustomerPhotoFront] = useState('');
   const [customerPhotoSide, setCustomerPhotoSide] = useState('');
   const [customerPhotoBack, setCustomerPhotoBack] = useState('');
+  const [customerPhotoExtra1, setCustomerPhotoExtra1] = useState('');
+  const [customerPhotoExtra2, setCustomerPhotoExtra2] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('เงินโอน');
   const [status, setStatus] = useState<OrderStatus>(OrderStatus.RECEIVED);
   const [finalPaymentAmount, setFinalPaymentAmount] = useState('');
@@ -352,6 +354,13 @@ export default function OrderForm({
     if (!price || isNaN(Number(price))) tempErrors.price = "กรุณากรอกราคาให้ถูกต้อง";
     if (!deposit || isNaN(Number(deposit))) tempErrors.deposit = "กรุณากรอกมัดจำให้ถูกต้อง";
     if (!deliveryDate) tempErrors.deliveryDate = "กรุณาเลือกวันกำหนดส่งชุด";
+
+    // บังคับแนบรูปถ่ายสัดส่วนลูกค้า 3 รูปหลัก (ด้านหน้า, ด้านข้าง, ด้านหลัง)
+    if (customerCategory !== 'IDH') {
+      if (!customerPhotoFront) tempErrors.customerPhotoFront = "กรุณาแนบภาพถ่ายลูกค้า ด้านหน้า (บังคับ)";
+      if (!customerPhotoSide) tempErrors.customerPhotoSide = "กรุณาแนบภาพถ่ายลูกค้า ด้านข้าง (บังคับ)";
+      if (!customerPhotoBack) tempErrors.customerPhotoBack = "กรุณาแนบภาพถ่ายลูกค้า ด้านหลัง (บังคับ)";
+    }
     
     setErrors(tempErrors);
     return Object.keys(tempErrors).length === 0;
@@ -410,6 +419,13 @@ export default function OrderForm({
       finalPaymentMethod: finalPaymentAmount.trim() !== '' && (parseInt(finalPaymentAmount) || 0) > 0 ? finalPaymentMethod : undefined,
       measurements: measurementsData,
       status: status || OrderStatus.RECEIVED,
+      statusDate: todayStr,
+      statusHistory: [{
+        status: status || OrderStatus.RECEIVED,
+        date: todayStr,
+        note: STATUS_MAP[status || OrderStatus.RECEIVED]?.label || 'รับออร์เดอร์จากลูกค้าพร้อมลงระบบ',
+        updatedBy: selectedStaffName || staffName || 'พนักงาน'
+      }],
       notes: notes || undefined,
       selectedDesignId: selectedDesignId !== 'custom' ? selectedDesignId : undefined,
       sku: sku.trim() || undefined,
@@ -423,6 +439,8 @@ export default function OrderForm({
       customerPhotoFront: customerPhotoFront || undefined,
       customerPhotoSide: customerPhotoSide || undefined,
       customerPhotoBack: customerPhotoBack || undefined,
+      customerPhotoExtra1: customerPhotoExtra1 || undefined,
+      customerPhotoExtra2: customerPhotoExtra2 || undefined,
       paymentMethod: paymentMethod || 'เงินโอน',
       slipImage: slipImage || undefined,
       customerCategory: customerCategory || undefined,
@@ -486,6 +504,8 @@ export default function OrderForm({
       setCustomerPhotoFront('');
       setCustomerPhotoSide('');
       setCustomerPhotoBack('');
+      setCustomerPhotoExtra1('');
+      setCustomerPhotoExtra2('');
       setPaymentMethod('เงินโอน');
       setSlipImage('');
       setSelectedSize('');
@@ -1647,42 +1667,53 @@ export default function OrderForm({
               </>
             )}
 
-            {/* รูปถ่ายสัดส่วนลูกค้า (ด้านหน้า, ด้านข้าง, ด้านหลัง) */}
+            {/* รูปถ่ายสัดส่วนลูกค้า (ด้านหน้า*, ด้านข้าง*, ด้านหลัง*, เพิ่มเติม 1, เพิ่มเติม 2) */}
             {customerCategory !== 'IDH' && (
               <div className="pt-4 border-t border-natural-sand/55 space-y-3">
-                <div>
-                  <h4 className="text-xs font-bold text-natural-espresso flex items-center space-x-1.5" id="customer-photos-label">
-                    <ImageIcon className="h-3.5 w-3.5 text-natural-clay" />
-                    <span>รูปถ่ายหุ่น/สัดส่วนลูกค้า (Customer Body Photos)</span>
-                  </h4>
-                  <p className="text-[10px] text-natural-espresso/60">
-                    แนบรูปถ่ายลูกค้าเพื่อช่วยประกอบการพิจารณาสรีระในการขึ้นแพทเทิร์นของช่างให้สมบูรณ์แบบที่สุด (ด้านหน้า, ด้านข้าง, ด้านหลัง)
-                  </p>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h4 className="text-xs font-bold text-natural-espresso flex items-center space-x-1.5" id="customer-photos-label">
+                      <ImageIcon className="h-3.5 w-3.5 text-natural-clay" />
+                      <span>รูปถ่ายหุ่น/สัดส่วนลูกค้า (Customer Body Photos) — 5 ช่อง</span>
+                    </h4>
+                    <p className="text-[10px] text-natural-espresso/60">
+                      แนบรูปถ่ายลูกค้าเพื่อช่วยประกอบการพิจารณาสรีระในการขึ้นแพทเทิร์นของช่างให้สมบูรณ์แบบที่สุด (<span className="text-red-500 font-bold">* 3 รูปแรกบังคับต้องใส่</span>)
+                    </p>
+                  </div>
+                  <span className="text-[10px] font-bold text-red-600 bg-red-50 border border-red-200 px-2 py-0.5 rounded-md">
+                    * บังคับใส่ 3 ด้าน (หน้า / ข้าง / หลัง)
+                  </span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  {/* ด้านหน้า */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3.5">
+                  {/* 1. ด้านหน้า (บังคับ *) */}
                   <div className="space-y-1.5" id="photo-front-container">
-                    <span className="text-[11px] font-bold text-natural-espresso/70 block">📸 ภาพถ่ายลูกค้า ด้านหน้า</span>
+                    <span className="text-[11px] font-bold text-natural-espresso/80 block">
+                      📸 ด้านหน้า <span className="text-red-500 font-bold">* (บังคับ)</span>
+                    </span>
                     {customerPhotoFront ? (
-                      <div className="relative rounded-xl overflow-hidden border border-natural-wheat bg-natural-sand/10 p-1.5 flex items-center justify-between">
+                      <div className="relative rounded-xl overflow-hidden border border-emerald-300 bg-emerald-50/20 p-1.5 flex items-center justify-between">
                         <img 
                           src={customerPhotoFront} 
                           alt="Front View" 
-                          className="h-16 w-16 object-cover rounded-lg border border-natural-wheat shadow-xs"
+                          className="h-14 w-14 object-cover rounded-lg border border-natural-wheat shadow-xs"
                         />
-                        <span className="text-[10px] text-emerald-700 font-bold ml-1">ด้านหน้าเรียบร้อย ✓</span>
+                        <span className="text-[9px] text-emerald-700 font-bold ml-1">เรียบร้อย ✓</span>
                         <button
                           type="button"
                           onClick={() => setCustomerPhotoFront('')}
-                          className="p-1 bg-red-50 hover:bg-red-100 text-red-600 rounded-full transition-all cursor-pointer mr-1"
+                          className="p-1 bg-red-50 hover:bg-red-100 text-red-600 rounded-full transition-all cursor-pointer mr-0.5"
                           title="ลบรูปภาพ"
                         >
-                          <X className="h-3.5 w-3.5" />
+                          <X className="h-3 w-3" />
                         </button>
                       </div>
                     ) : (
-                      <div className="relative border border-dashed border-natural-wheat hover:border-natural-clay/40 rounded-xl p-3 transition-all bg-natural-cream/5 hover:bg-natural-sand/10 text-center flex flex-col items-center justify-center h-[74px]">
+                      <div className={`relative border border-dashed rounded-xl p-2.5 transition-all text-center flex flex-col items-center justify-center h-[68px] ${
+                        errors.customerPhotoFront 
+                          ? 'border-red-400 bg-red-50/30' 
+                          : 'border-natural-wheat hover:border-natural-clay/40 bg-natural-cream/5 hover:bg-natural-sand/10'
+                      }`}>
                         <input
                           type="file"
                           accept="image/*"
@@ -1700,34 +1731,45 @@ export default function OrderForm({
                           className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                           title="อัปโหลดรูปด้านหน้า"
                         />
-                        <UploadCloud className="h-5 w-5 text-natural-clay/70 mb-1" />
-                        <span className="text-[10px] font-bold text-natural-espresso/80">อัปโหลดภาพ ด้านหน้า</span>
+                        <UploadCloud className={`h-4 w-4 mb-0.5 ${errors.customerPhotoFront ? 'text-red-500' : 'text-natural-clay/70'}`} />
+                        <span className={`text-[10px] font-bold ${errors.customerPhotoFront ? 'text-red-600' : 'text-natural-espresso/80'}`}>
+                          อัปโหลด ด้านหน้า *
+                        </span>
                       </div>
+                    )}
+                    {errors.customerPhotoFront && (
+                      <p className="text-[9px] text-red-600 font-bold">{errors.customerPhotoFront}</p>
                     )}
                   </div>
 
-                  {/* ด้านข้าง */}
+                  {/* 2. ด้านข้าง (บังคับ *) */}
                   <div className="space-y-1.5" id="photo-side-container">
-                    <span className="text-[11px] font-bold text-natural-espresso/70 block">📸 ภาพถ่ายลูกค้า ด้านข้าง</span>
+                    <span className="text-[11px] font-bold text-natural-espresso/80 block">
+                      📸 ด้านข้าง <span className="text-red-500 font-bold">* (บังคับ)</span>
+                    </span>
                     {customerPhotoSide ? (
-                      <div className="relative rounded-xl overflow-hidden border border-natural-wheat bg-natural-sand/10 p-1.5 flex items-center justify-between">
+                      <div className="relative rounded-xl overflow-hidden border border-emerald-300 bg-emerald-50/20 p-1.5 flex items-center justify-between">
                         <img 
                           src={customerPhotoSide} 
                           alt="Side View" 
-                          className="h-16 w-16 object-cover rounded-lg border border-natural-wheat shadow-xs"
+                          className="h-14 w-14 object-cover rounded-lg border border-natural-wheat shadow-xs"
                         />
-                        <span className="text-[10px] text-emerald-700 font-bold ml-1">ด้านข้างเรียบร้อย ✓</span>
+                        <span className="text-[9px] text-emerald-700 font-bold ml-1">เรียบร้อย ✓</span>
                         <button
                           type="button"
                           onClick={() => setCustomerPhotoSide('')}
-                          className="p-1 bg-red-50 hover:bg-red-100 text-red-600 rounded-full transition-all cursor-pointer mr-1"
+                          className="p-1 bg-red-50 hover:bg-red-100 text-red-600 rounded-full transition-all cursor-pointer mr-0.5"
                           title="ลบรูปภาพ"
                         >
-                          <X className="h-3.5 w-3.5" />
+                          <X className="h-3 w-3" />
                         </button>
                       </div>
                     ) : (
-                      <div className="relative border border-dashed border-natural-wheat hover:border-natural-clay/40 rounded-xl p-3 transition-all bg-natural-cream/5 hover:bg-natural-sand/10 text-center flex flex-col items-center justify-center h-[74px]">
+                      <div className={`relative border border-dashed rounded-xl p-2.5 transition-all text-center flex flex-col items-center justify-center h-[68px] ${
+                        errors.customerPhotoSide 
+                          ? 'border-red-400 bg-red-50/30' 
+                          : 'border-natural-wheat hover:border-natural-clay/40 bg-natural-cream/5 hover:bg-natural-sand/10'
+                      }`}>
                         <input
                           type="file"
                           accept="image/*"
@@ -1745,34 +1787,45 @@ export default function OrderForm({
                           className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                           title="อัปโหลดรูปด้านข้าง"
                         />
-                        <UploadCloud className="h-5 w-5 text-natural-clay/70 mb-1" />
-                        <span className="text-[10px] font-bold text-natural-espresso/80">อัปโหลดภาพ ด้านข้าง</span>
+                        <UploadCloud className={`h-4 w-4 mb-0.5 ${errors.customerPhotoSide ? 'text-red-500' : 'text-natural-clay/70'}`} />
+                        <span className={`text-[10px] font-bold ${errors.customerPhotoSide ? 'text-red-600' : 'text-natural-espresso/80'}`}>
+                          อัปโหลด ด้านข้าง *
+                        </span>
                       </div>
+                    )}
+                    {errors.customerPhotoSide && (
+                      <p className="text-[9px] text-red-600 font-bold">{errors.customerPhotoSide}</p>
                     )}
                   </div>
 
-                  {/* ด้านหลัง */}
+                  {/* 3. ด้านหลัง (บังคับ *) */}
                   <div className="space-y-1.5" id="photo-back-container">
-                    <span className="text-[11px] font-bold text-natural-espresso/70 block">📸 ภาพถ่ายลูกค้า ด้านหลัง</span>
+                    <span className="text-[11px] font-bold text-natural-espresso/80 block">
+                      📸 ด้านหลัง <span className="text-red-500 font-bold">* (บังคับ)</span>
+                    </span>
                     {customerPhotoBack ? (
-                      <div className="relative rounded-xl overflow-hidden border border-natural-wheat bg-natural-sand/10 p-1.5 flex items-center justify-between">
+                      <div className="relative rounded-xl overflow-hidden border border-emerald-300 bg-emerald-50/20 p-1.5 flex items-center justify-between">
                         <img 
                           src={customerPhotoBack} 
                           alt="Back View" 
-                          className="h-16 w-16 object-cover rounded-lg border border-natural-wheat shadow-xs"
+                          className="h-14 w-14 object-cover rounded-lg border border-natural-wheat shadow-xs"
                         />
-                        <span className="text-[10px] text-emerald-700 font-bold ml-1">ด้านหลังเรียบร้อย ✓</span>
+                        <span className="text-[9px] text-emerald-700 font-bold ml-1">เรียบร้อย ✓</span>
                         <button
                           type="button"
                           onClick={() => setCustomerPhotoBack('')}
-                          className="p-1 bg-red-50 hover:bg-red-100 text-red-600 rounded-full transition-all cursor-pointer mr-1"
+                          className="p-1 bg-red-50 hover:bg-red-100 text-red-600 rounded-full transition-all cursor-pointer mr-0.5"
                           title="ลบรูปภาพ"
                         >
-                          <X className="h-3.5 w-3.5" />
+                          <X className="h-3 w-3" />
                         </button>
                       </div>
                     ) : (
-                      <div className="relative border border-dashed border-natural-wheat hover:border-natural-clay/40 rounded-xl p-3 transition-all bg-natural-cream/5 hover:bg-natural-sand/10 text-center flex flex-col items-center justify-center h-[74px]">
+                      <div className={`relative border border-dashed rounded-xl p-2.5 transition-all text-center flex flex-col items-center justify-center h-[68px] ${
+                        errors.customerPhotoBack 
+                          ? 'border-red-400 bg-red-50/30' 
+                          : 'border-natural-wheat hover:border-natural-clay/40 bg-natural-cream/5 hover:bg-natural-sand/10'
+                      }`}>
                         <input
                           type="file"
                           accept="image/*"
@@ -1790,8 +1843,107 @@ export default function OrderForm({
                           className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                           title="อัปโหลดรูปด้านหลัง"
                         />
-                        <UploadCloud className="h-5 w-5 text-natural-clay/70 mb-1" />
-                        <span className="text-[10px] font-bold text-natural-espresso/80">อัปโหลดภาพ ด้านหลัง</span>
+                        <UploadCloud className={`h-4 w-4 mb-0.5 ${errors.customerPhotoBack ? 'text-red-500' : 'text-natural-clay/70'}`} />
+                        <span className={`text-[10px] font-bold ${errors.customerPhotoBack ? 'text-red-600' : 'text-natural-espresso/80'}`}>
+                          อัปโหลด ด้านหลัง *
+                        </span>
+                      </div>
+                    )}
+                    {errors.customerPhotoBack && (
+                      <p className="text-[9px] text-red-600 font-bold">{errors.customerPhotoBack}</p>
+                    )}
+                  </div>
+
+                  {/* 4. ภาพถ่ายเพิ่มเติม 1 */}
+                  <div className="space-y-1.5" id="photo-extra1-container">
+                    <span className="text-[11px] font-bold text-natural-espresso/70 block">
+                      📸 ภาพเพิ่มเติม 1 <span className="text-[10px] text-natural-espresso/40 font-normal">(เสริม)</span>
+                    </span>
+                    {customerPhotoExtra1 ? (
+                      <div className="relative rounded-xl overflow-hidden border border-natural-wheat bg-natural-sand/10 p-1.5 flex items-center justify-between">
+                        <img 
+                          src={customerPhotoExtra1} 
+                          alt="Extra View 1" 
+                          className="h-14 w-14 object-cover rounded-lg border border-natural-wheat shadow-xs"
+                        />
+                        <span className="text-[9px] text-natural-espresso/80 font-bold ml-1">แนบแล้ว ✓</span>
+                        <button
+                          type="button"
+                          onClick={() => setCustomerPhotoExtra1('')}
+                          className="p-1 bg-red-50 hover:bg-red-100 text-red-600 rounded-full transition-all cursor-pointer mr-0.5"
+                          title="ลบรูปภาพ"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="relative border border-dashed border-natural-wheat hover:border-natural-clay/40 rounded-xl p-2.5 transition-all bg-natural-cream/5 hover:bg-natural-sand/10 text-center flex flex-col items-center justify-center h-[68px]">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              compressImage(file, 800, 800, 0.75)
+                                .then(setCustomerPhotoExtra1)
+                                .catch((err) => {
+                                  console.error(err);
+                                  alert('เกิดข้อผิดพลาดในการประมวลผลรูปภาพค่ะ');
+                                });
+                            }
+                          }}
+                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                          title="อัปโหลดรูปเพิ่มเติม 1"
+                        />
+                        <UploadCloud className="h-4 w-4 text-natural-clay/70 mb-0.5" />
+                        <span className="text-[10px] font-bold text-natural-espresso/70">อัปโหลด เพิ่มเติม 1</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 5. ภาพถ่ายเพิ่มเติม 2 */}
+                  <div className="space-y-1.5" id="photo-extra2-container">
+                    <span className="text-[11px] font-bold text-natural-espresso/70 block">
+                      📸 ภาพเพิ่มเติม 2 <span className="text-[10px] text-natural-espresso/40 font-normal">(เสริม)</span>
+                    </span>
+                    {customerPhotoExtra2 ? (
+                      <div className="relative rounded-xl overflow-hidden border border-natural-wheat bg-natural-sand/10 p-1.5 flex items-center justify-between">
+                        <img 
+                          src={customerPhotoExtra2} 
+                          alt="Extra View 2" 
+                          className="h-14 w-14 object-cover rounded-lg border border-natural-wheat shadow-xs"
+                        />
+                        <span className="text-[9px] text-natural-espresso/80 font-bold ml-1">แนบแล้ว ✓</span>
+                        <button
+                          type="button"
+                          onClick={() => setCustomerPhotoExtra2('')}
+                          className="p-1 bg-red-50 hover:bg-red-100 text-red-600 rounded-full transition-all cursor-pointer mr-0.5"
+                          title="ลบรูปภาพ"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="relative border border-dashed border-natural-wheat hover:border-natural-clay/40 rounded-xl p-2.5 transition-all bg-natural-cream/5 hover:bg-natural-sand/10 text-center flex flex-col items-center justify-center h-[68px]">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              compressImage(file, 800, 800, 0.75)
+                                .then(setCustomerPhotoExtra2)
+                                .catch((err) => {
+                                  console.error(err);
+                                  alert('เกิดข้อผิดพลาดในการประมวลผลรูปภาพค่ะ');
+                                });
+                            }
+                          }}
+                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                          title="อัปโหลดรูปเพิ่มเติม 2"
+                        />
+                        <UploadCloud className="h-4 w-4 text-natural-clay/70 mb-0.5" />
+                        <span className="text-[10px] font-bold text-natural-espresso/70">อัปโหลด เพิ่มเติม 2</span>
                       </div>
                     )}
                   </div>
@@ -1904,15 +2056,15 @@ export default function OrderForm({
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-natural-espresso/70 mb-1">สถานะเริ่มต้นของออเดอร์</label>
+                <label className="block text-xs font-medium text-natural-espresso/70 mb-1">สถานะเริ่มต้นของออเดอร์ (22 ขั้นตอนติดตาม)</label>
                 <select
                   value={status}
                   onChange={(e) => setStatus(e.target.value as OrderStatus)}
                   className="w-full text-sm px-3 py-2 rounded-xl border border-natural-wheat focus:outline-none focus:ring-2 focus:ring-natural-clay/20 focus:border-natural-clay bg-natural-cream/20 font-bold cursor-pointer"
                 >
-                  {Object.values(OrderStatus).map((os) => (
+                  {PRODUCTION_PIPELINE_STEPS.map((os, index) => (
                     <option key={os} value={os}>
-                      {STATUS_MAP[os].label}
+                      {index + 1}. {STATUS_MAP[os]?.label || os}
                     </option>
                   ))}
                 </select>
@@ -1971,11 +2123,11 @@ export default function OrderForm({
               </div>
             </div>
 
-            {/* แนบสลิปชำระเงิน */}
+            {/* แนบสลิปชำระเงิน/เงินสด/บัตรเครดิต */}
             <div className="pt-4 border-t border-natural-sand/40">
               <label className="block text-xs font-bold text-natural-espresso/80 mb-2 flex items-center space-x-1.5">
                 <ImageIcon className="h-3.5 w-3.5 text-natural-clay" />
-                <span>แนบหลักฐานสลิปการโอนเงิน (Payment Slip Upload)</span>
+                <span>แนบหลักฐานสลิปการโอนเงิน/เงินสด/บัตรเครดิต (Payment Slip Upload)</span>
               </label>
 
               {slipImage ? (
@@ -1988,7 +2140,7 @@ export default function OrderForm({
                       referrerPolicy="no-referrer"
                     />
                     <div>
-                      <p className="text-xs font-bold text-natural-espresso">แนบสลิปสำเร็จแล้ว ✓</p>
+                      <p className="text-xs font-bold text-natural-espresso">แนบหลักฐานการชำระเงินสำเร็จแล้ว ✓</p>
                       <p className="text-[10px] text-natural-espresso/50">หลักฐานการชำระเงินนี้จะแนบไปกับออเดอร์</p>
                     </div>
                   </div>
@@ -1996,7 +2148,7 @@ export default function OrderForm({
                     type="button"
                     onClick={() => setSlipImage('')}
                     className="p-1 bg-red-50 hover:bg-red-100 text-red-600 rounded-full transition-all cursor-pointer mr-1"
-                    title="ลบสลิป"
+                    title="ลบหลักฐาน"
                   >
                     <X className="h-4 w-4" />
                   </button>
@@ -2018,12 +2170,12 @@ export default function OrderForm({
                       }
                     }}
                     className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                    title="คลิกหรือลากไฟล์สลิปมาวางที่นี่"
+                    title="คลิกหรือลากไฟล์หลักฐานการชำระเงินมาวางที่นี่"
                   />
                   <div className="flex flex-col items-center justify-center space-y-1">
                     <UploadCloud className="h-7 w-7 text-natural-clay/75" />
-                    <p className="text-xs font-bold text-natural-espresso">คลิก หรือลากไฟล์สลิปการโอนเงินมาวางที่นี่</p>
-                    <p className="text-[10px] text-natural-espresso/40 font-medium">รองรับรูปถ่ายสลิปทุกประเภท JPG, PNG, WEBP</p>
+                    <p className="text-xs font-bold text-natural-espresso">คลิก หรือลากไฟล์สลิปการโอนเงิน/เงินสด/บัตรเครดิตมาวางที่นี่</p>
+                    <p className="text-[10px] text-natural-espresso/40 font-medium">รองรับรูปถ่ายสลิปหรือหลักฐานการชำระเงินทุกประเภท JPG, PNG, WEBP</p>
                   </div>
                 </div>
               )}

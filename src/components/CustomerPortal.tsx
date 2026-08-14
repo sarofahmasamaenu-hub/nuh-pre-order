@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Order, OrderStatus, CatalogueItem, STATUS_MAP, Measurements, STANDARD_SIZE_CHART, CustomerReview } from '../types';
+import { Order, OrderStatus, CatalogueItem, STATUS_MAP, Measurements, STANDARD_SIZE_CHART, CustomerReview, PRODUCTION_PIPELINE_STEPS } from '../types';
 import { 
   Search, 
   Sparkles, 
@@ -572,17 +572,22 @@ export default function CustomerPortal({
     setReviewImage(null);
   };
 
-  // Get Progress Percentage based on Status
-  const getStatusProgress = (status: OrderStatus): number => {
+  // Get Progress Percentage based on Status (22 Production Pipeline Steps)
+  const getStatusProgress = (status: OrderStatus | string): number => {
+    if (status === OrderStatus.COMPLETED) return 100;
+    const index = PRODUCTION_PIPELINE_STEPS.indexOf(status as OrderStatus);
+    if (index >= 0) {
+      return Math.round(((index + 1) / PRODUCTION_PIPELINE_STEPS.length) * 100);
+    }
     switch (status) {
-      case OrderStatus.RECEIVED: return 15;
-      case OrderStatus.DESIGNING: return 30;
-      case OrderStatus.CUTTING: return 48;
-      case OrderStatus.SEWING: return 66;
-      case OrderStatus.FITTING: return 80;
-      case OrderStatus.READY: return 95;
+      case OrderStatus.RECEIVED: return 10;
+      case OrderStatus.DESIGNING: return 20;
+      case OrderStatus.CUTTING: return 35;
+      case OrderStatus.SEWING: return 50;
+      case OrderStatus.FITTING: return 70;
+      case OrderStatus.READY: return 90;
       case OrderStatus.COMPLETED: return 100;
-      default: return 0;
+      default: return 5;
     }
   };
 
@@ -604,7 +609,7 @@ export default function CustomerPortal({
           NUNUH Customer Lounge
         </h3>
         <p className="text-sm max-w-xl mx-auto text-natural-cream/80 leading-relaxed">
-          ยินดีต้อนรับเข้าสู่พื้นที่พิเศษสำหรับลูกค้าคนสำคัญ คุณสามารถตรวจสอบสถานะ คิวตัดเย็บ และขนาดสัดส่วนการวัดตัวของท่าน หรือเลือกสรรดีไซน์ชุดที่ต้องการส่งต่อให้ทางดีไซเนอร์พิจารณาได้ทันทีค่ะ
+          ยินดีต้อนรับเข้าสู่พื้นที่พิเศษสำหรับลูกค้าคนสำคัญ คุณสามารถตรวจสอบสถานะ คิวตัดเย็บ และขนาดสัดส่วนการวัดตัวของท่านได้
         </p>
       </div>
 
@@ -805,7 +810,7 @@ export default function CustomerPortal({
             }
 
             // Calculate status breakdown for this customer's phone number
-            const statusBreakdown: Record<OrderStatus, number> = {
+            const statusBreakdown: Partial<Record<OrderStatus, number>> = {
               [OrderStatus.RECEIVED]: searchedOrders.filter(o => o.status === OrderStatus.RECEIVED).length,
               [OrderStatus.DESIGNING]: searchedOrders.filter(o => o.status === OrderStatus.DESIGNING).length,
               [OrderStatus.CUTTING]: searchedOrders.filter(o => o.status === OrderStatus.CUTTING).length,
@@ -1162,6 +1167,13 @@ export default function CustomerPortal({
                         type="button"
                         onClick={() => {
                           const portalUrl = `${window.location.origin}${window.location.pathname}?tab=customer&search=${encodeURIComponent(cPhone || '')}&mode=customer`;
+                          const activeStatuses = Array.from(new Set(searchedOrders.map(o => o.status))) as OrderStatus[];
+                          const statusLines = activeStatuses.map(st => {
+                            const count = searchedOrders.filter(o => o.status === st).length;
+                            const label = STATUS_MAP[st]?.label || st;
+                            return `• 📌 ${label}: ${count} ชุด`;
+                          });
+
                           const summaryText = [
                             `📲 สรุปสถานะงานสั่งตัด - NUNUH Atelier`,
                             `----------------------------------`,
@@ -1170,13 +1182,7 @@ export default function CustomerPortal({
                             `📦 จำนวนออเดอร์สั่งตัดรวม: ${totalOrders} รายการ`,
                             ``,
                             `📊 สรุปสถานะล่าสุด:`,
-                            statusBreakdown[OrderStatus.RECEIVED] > 0 ? `• 📥 รับออเดอร์แล้ว: ${statusBreakdown[OrderStatus.RECEIVED]} ชุด` : null,
-                            statusBreakdown[OrderStatus.DESIGNING] > 0 ? `• 🎨 เตรียมแบบ/ผ้า: ${statusBreakdown[OrderStatus.DESIGNING]} ชุด` : null,
-                            statusBreakdown[OrderStatus.CUTTING] > 0 ? `• ✂️ ขึ้นแบบตัดผ้า: ${statusBreakdown[OrderStatus.CUTTING]} ชุด` : null,
-                            statusBreakdown[OrderStatus.SEWING] > 0 ? `• 🪡 กำลังเย็บประกอบ: ${statusBreakdown[OrderStatus.SEWING]} ชุด` : null,
-                            statusBreakdown[OrderStatus.FITTING] > 0 ? `• 📐 รอ/กำลังฟิตติ้ง: ${statusBreakdown[OrderStatus.FITTING]} ชุด` : null,
-                            statusBreakdown[OrderStatus.READY] > 0 ? `• ✨ พร้อมส่งมอบแล้ว: ${statusBreakdown[OrderStatus.READY]} ชุด` : null,
-                            statusBreakdown[OrderStatus.COMPLETED] > 0 ? `• 🏁 ส่งมอบสำเร็จแล้ว: ${statusBreakdown[OrderStatus.COMPLETED]} ชุด` : null,
+                            ...statusLines,
                             ``,
                             `🔍 ดูรูปภาพและติดตามสถานะล่าสุดออนไลน์ได้ที่:`,
                             portalUrl
@@ -1195,6 +1201,13 @@ export default function CustomerPortal({
                         type="button"
                         onClick={async () => {
                           const portalUrl = `${window.location.origin}${window.location.pathname}?tab=customer&search=${encodeURIComponent(cPhone || '')}&mode=customer`;
+                          const activeStatuses = Array.from(new Set(searchedOrders.map(o => o.status))) as OrderStatus[];
+                          const statusLines = activeStatuses.map(st => {
+                            const count = searchedOrders.filter(o => o.status === st).length;
+                            const label = STATUS_MAP[st]?.label || st;
+                            return `• 📌 ${label}: ${count} ชุด`;
+                          });
+
                           const summaryText = [
                             `📲 สรุปสถานะงานสั่งตัด - NUNUH Atelier`,
                             `----------------------------------`,
@@ -1203,13 +1216,7 @@ export default function CustomerPortal({
                             `📦 จำนวนออเดอร์สั่งตัดรวม: ${totalOrders} รายการ`,
                             ``,
                             `📊 สรุปสถานะล่าสุด:`,
-                            statusBreakdown[OrderStatus.RECEIVED] > 0 ? `• 📥 รับออเดอร์แล้ว: ${statusBreakdown[OrderStatus.RECEIVED]} ชุด` : null,
-                            statusBreakdown[OrderStatus.DESIGNING] > 0 ? `• 🎨 เตรียมแบบ/ผ้า: ${statusBreakdown[OrderStatus.DESIGNING]} ชุด` : null,
-                            statusBreakdown[OrderStatus.CUTTING] > 0 ? `• ✂️ ขึ้นแบบตัดผ้า: ${statusBreakdown[OrderStatus.CUTTING]} ชุด` : null,
-                            statusBreakdown[OrderStatus.SEWING] > 0 ? `• 🪡 กำลังเย็บประกอบ: ${statusBreakdown[OrderStatus.SEWING]} ชุด` : null,
-                            statusBreakdown[OrderStatus.FITTING] > 0 ? `• 📐 รอ/กำลังฟิตติ้ง: ${statusBreakdown[OrderStatus.FITTING]} ชุด` : null,
-                            statusBreakdown[OrderStatus.READY] > 0 ? `• ✨ พร้อมส่งมอบแล้ว: ${statusBreakdown[OrderStatus.READY]} ชุด` : null,
-                            statusBreakdown[OrderStatus.COMPLETED] > 0 ? `• 🏁 ส่งมอบสำเร็จแล้ว: ${statusBreakdown[OrderStatus.COMPLETED]} ชุด` : null,
+                            ...statusLines,
                             ``,
                             `🔍 ดูรูปภาพและติดตามสถานะล่าสุดออนไลน์ได้ที่:`,
                             portalUrl
@@ -1360,48 +1367,97 @@ export default function CustomerPortal({
                                 ></div>
                               </div>
 
-                              {/* Stepper Steps Labels */}
-                              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2.5 pt-2">
-                                {Object.entries(STATUS_MAP).map(([statusKey, cfg]) => {
-                                  const isCurrent = order.status === statusKey;
-                                  const isPassed = getStatusProgress(order.status) >= getStatusProgress(statusKey as OrderStatus);
-
-                                  return (
-                                    <div 
-                                      key={statusKey}
-                                      className={`p-2 rounded-xl border text-center transition-all ${
-                                        isCurrent 
-                                          ? 'bg-natural-espresso border-natural-espresso text-natural-cream scale-[1.02] shadow-xs' 
-                                          : isPassed 
-                                            ? 'bg-natural-sand/60 border-natural-wheat text-natural-espresso/80' 
-                                            : 'bg-white border-natural-wheat/40 text-natural-espresso/30'
-                                      }`}
-                                    >
-                                      <p className="text-[10px] font-bold leading-tight truncate">
-                                        {cfg.label}
+                              {/* Current Step Highlight Card */}
+                              <div className="bg-natural-sand/20 border border-natural-wheat/80 p-4 rounded-xl space-y-3">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <div className="flex items-center gap-2">
+                                    <span className="w-7 h-7 rounded-lg bg-natural-espresso text-natural-cream flex items-center justify-center font-bold text-xs">
+                                      {Math.max(1, PRODUCTION_PIPELINE_STEPS.indexOf(order.status as OrderStatus) + 1)}
+                                    </span>
+                                    <div>
+                                      <p className="text-[10px] font-bold text-natural-espresso/60 uppercase tracking-wider">
+                                        สถานะปัจจุบัน (ขั้นตอนที่ {Math.max(1, PRODUCTION_PIPELINE_STEPS.indexOf(order.status as OrderStatus) + 1)} จาก {PRODUCTION_PIPELINE_STEPS.length})
                                       </p>
-                                      {isCurrent && (
-                                        <p className="text-[8px] font-medium leading-tight opacity-90 mt-1">
-                                          สเตตัสปัจจุบัน
-                                        </p>
-                                      )}
+                                      <p className="text-sm font-extrabold text-natural-espresso">
+                                        {STATUS_MAP[order.status]?.label || order.status}
+                                      </p>
                                     </div>
-                                  );
-                                })}
-                              </div>
+                                  </div>
 
-                              {/* Current Step Description Card */}
-                              <div className="bg-natural-sand/20 border border-natural-wheat/60 p-4 rounded-xl flex items-start space-x-3">
-                                <Info className="h-5 w-5 text-natural-clay flex-shrink-0 mt-0.5" />
-                                <div>
-                                  <p className="text-xs font-bold text-natural-espresso">
-                                    รายละเอียดขั้นตอนนี้:
-                                  </p>
-                                  <p className="text-xs text-natural-espresso/80 mt-1 leading-relaxed">
+                                  <span className="text-[11px] font-semibold text-natural-clay bg-white/80 px-2.5 py-1 rounded-lg border border-natural-wheat/80 shadow-3xs flex items-center gap-1">
+                                    <Clock className="h-3 w-3 text-natural-clay" /> วันที่สถานะล่าสุด: {order.statusDate || order.orderDate}
+                                  </span>
+                                </div>
+
+                                <div className="flex items-start space-x-2.5 bg-white/70 p-3 rounded-lg border border-natural-wheat/50">
+                                  <Info className="h-4 w-4 text-natural-clay flex-shrink-0 mt-0.5" />
+                                  <p className="text-xs text-natural-espresso/80 leading-relaxed">
                                     {currentStatus.description}
                                   </p>
                                 </div>
+
+                                {/* Optional Collapsible: View all 22 steps as a selector/reference */}
+                                <details className="group border-t border-natural-wheat/40 pt-2">
+                                  <summary className="text-[11px] font-bold text-natural-clay hover:text-natural-espresso cursor-pointer flex items-center justify-between list-none">
+                                    <span>📋 ดูลำดับ 22 ขั้นตอนการผลิตทั้งหมด</span>
+                                    <span className="text-xs transition-transform group-open:rotate-180">▼</span>
+                                  </summary>
+                                  <div className="mt-2.5 grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-56 overflow-y-auto pr-1 text-xs">
+                                    {PRODUCTION_PIPELINE_STEPS.map((statusKey, stepIdx) => {
+                                      const cfg = STATUS_MAP[statusKey];
+                                      const isCurrent = order.status === statusKey;
+                                      const currentIdx = PRODUCTION_PIPELINE_STEPS.indexOf(order.status as OrderStatus);
+                                      const isPassed = currentIdx > stepIdx;
+
+                                      return (
+                                        <div 
+                                          key={statusKey}
+                                          className={`p-2 rounded-lg border text-left flex items-center justify-between text-[11px] ${
+                                            isCurrent 
+                                              ? 'bg-natural-espresso text-natural-cream font-bold border-natural-espresso shadow-xs' 
+                                              : isPassed 
+                                                ? 'bg-natural-sand/40 border-natural-wheat text-natural-espresso/70' 
+                                                : 'bg-white/60 border-natural-wheat/40 text-natural-espresso/40'
+                                          }`}
+                                        >
+                                          <span className="truncate pr-2">
+                                            {stepIdx + 1}. {cfg?.label || statusKey}
+                                          </span>
+                                          <span className="text-[9px] shrink-0 font-medium opacity-80">
+                                            {isCurrent ? '● กำลังทำ' : isPassed ? '✓ เสร็จแล้ว' : '○ รอ'}
+                                          </span>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </details>
                               </div>
+
+                              {/* Status History Logs for Customer */}
+                              {order.statusHistory && order.statusHistory.length > 0 && (
+                                <div className="bg-natural-sand/15 border border-natural-wheat/70 rounded-xl p-3.5 space-y-2">
+                                  <p className="text-xs font-bold text-natural-espresso flex items-center gap-1.5">
+                                    <History className="h-3.5 w-3.5 text-natural-clay" /> ไทม์ไลน์ประวัติการอัปเดตงาน (Production Progress Timeline)
+                                  </p>
+                                  <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                                    {order.statusHistory.map((h, hIdx) => (
+                                      <div key={hIdx} className="flex items-start justify-between text-[11px] bg-white/80 p-2 rounded-lg border border-natural-wheat/40">
+                                        <div>
+                                          <span className="font-bold text-natural-espresso">
+                                            {STATUS_MAP[h.status as OrderStatus]?.label || h.status}
+                                          </span>
+                                          {h.note && (
+                                            <p className="text-[10px] text-natural-espresso/70 mt-0.5">{h.note}</p>
+                                          )}
+                                        </div>
+                                        <span className="text-[10px] font-mono text-natural-espresso/60 shrink-0 ml-2">
+                                          📅 {h.date}
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
                             </div>
 
                             {/* Technical details Grid (Specs, Measurements, Balances) */}

@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Order, OrderStatus, Measurements, STATUS_MAP, STANDARD_SIZE_CHART } from '../types';
+import { Order, OrderStatus, Measurements, STATUS_MAP, STANDARD_SIZE_CHART, PRODUCTION_PIPELINE_STEPS } from '../types';
 import { X, Save, User, Sparkles, Ruler, CreditCard, Image as ImageIcon, UploadCloud, Check, Lock, ShieldCheck } from 'lucide-react';
 import { INITIAL_CATALOGUE } from '../initialData';
 import { compressImage } from '../utils/image';
@@ -65,6 +65,7 @@ export default function EditOrderModal({ order, onClose, onSave }: EditOrderModa
   const [paymentMethod, setPaymentMethod] = useState(order.paymentMethod || 'เงินโอน');
   const [deliveryDate, setDeliveryDate] = useState(order.deliveryDate || '');
   const [status, setStatus] = useState<OrderStatus>(order.status || OrderStatus.RECEIVED);
+  const [statusDate, setStatusDate] = useState(order.statusDate || order.orderDate || new Date().toISOString().split('T')[0]);
   const [branch, setBranch] = useState(order.branch || 'สาขานราธิวาส');
 
   // Measurements states
@@ -159,6 +160,8 @@ export default function EditOrderModal({ order, onClose, onSave }: EditOrderModa
   const [customerPhotoFront, setCustomerPhotoFront] = useState(order.customerPhotoFront || '');
   const [customerPhotoSide, setCustomerPhotoSide] = useState(order.customerPhotoSide || '');
   const [customerPhotoBack, setCustomerPhotoBack] = useState(order.customerPhotoBack || '');
+  const [customerPhotoExtra1, setCustomerPhotoExtra1] = useState(order.customerPhotoExtra1 || '');
+  const [customerPhotoExtra2, setCustomerPhotoExtra2] = useState(order.customerPhotoExtra2 || '');
   const [slipImage, setSlipImage] = useState(order.slipImage || '');
 
   // Ensure body scroll is managed when modal is open
@@ -169,7 +172,7 @@ export default function EditOrderModal({ order, onClose, onSave }: EditOrderModa
     };
   }, []);
 
-  const handleImageUpload = (file: File, type: 'custom' | 'custom2' | 'front' | 'side' | 'back' | 'slip') => {
+  const handleImageUpload = (file: File, type: 'custom' | 'custom2' | 'front' | 'side' | 'back' | 'extra1' | 'extra2' | 'slip') => {
     compressImage(file, 800, 800, 0.75)
       .then((compressedBase64) => {
         if (type === 'custom') setCustomImage(compressedBase64);
@@ -177,6 +180,8 @@ export default function EditOrderModal({ order, onClose, onSave }: EditOrderModa
         if (type === 'front') setCustomerPhotoFront(compressedBase64);
         if (type === 'side') setCustomerPhotoSide(compressedBase64);
         if (type === 'back') setCustomerPhotoBack(compressedBase64);
+        if (type === 'extra1') setCustomerPhotoExtra1(compressedBase64);
+        if (type === 'extra2') setCustomerPhotoExtra2(compressedBase64);
         if (type === 'slip') setSlipImage(compressedBase64);
       })
       .catch((err) => {
@@ -191,6 +196,13 @@ export default function EditOrderModal({ order, onClose, onSave }: EditOrderModa
     if (!customerName.trim() || !customerPhone.trim()) {
       alert('กรุณากรอกชื่อและเบอร์โทรศัพท์ของลูกค้า');
       return;
+    }
+
+    if (customerCategory !== 'IDH') {
+      if (!customerPhotoFront || !customerPhotoSide || !customerPhotoBack) {
+        alert('กรุณาแนบรูปถ่ายลูกค้าให้ครบทั้ง 3 ด้าน (ด้านหน้า, ด้านข้าง, ด้านหลัง) ค่ะ');
+        return;
+      }
     }
 
     const updatedMeasurements: Measurements = {
@@ -237,12 +249,15 @@ export default function EditOrderModal({ order, onClose, onSave }: EditOrderModa
       paymentMethod,
       deliveryDate,
       status,
+      statusDate: statusDate.trim() || undefined,
       measurements: updatedMeasurements,
       customImage: customImage || undefined,
       customImage2: customImage2 || undefined,
       customerPhotoFront: customerPhotoFront || undefined,
       customerPhotoSide: customerPhotoSide || undefined,
       customerPhotoBack: customerPhotoBack || undefined,
+      customerPhotoExtra1: customerPhotoExtra1 || undefined,
+      customerPhotoExtra2: customerPhotoExtra2 || undefined,
       slipImage: slipImage || undefined,
       isMatchingSet: isMatchingSet || undefined,
       idhNumber: isMatchingSet ? (idhNumber.trim() || undefined) : undefined
@@ -736,24 +751,38 @@ export default function EditOrderModal({ order, onClose, onSave }: EditOrderModa
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-natural-espresso/70 mb-1">สถานะออเดอร์</label>
+                  <label className="block text-xs font-semibold text-natural-espresso/70 mb-1">สถานะออเดอร์ (22 ขั้นตอนติดตาม)</label>
                   <select
                     value={status}
-                    onChange={(e) => setStatus(e.target.value as OrderStatus)}
+                    onChange={(e) => {
+                      setStatus(e.target.value as OrderStatus);
+                      // Update status date to today if changing status
+                      setStatusDate(new Date().toISOString().split('T')[0]);
+                    }}
                     className="w-full text-sm px-3 py-2 rounded-xl border border-natural-wheat focus:outline-none focus:ring-2 focus:ring-natural-clay/20 focus:border-natural-clay bg-natural-cream/10 cursor-pointer font-bold"
                   >
-                    {Object.values(OrderStatus).map((os) => (
+                    {PRODUCTION_PIPELINE_STEPS.map((os, index) => (
                       <option key={os} value={os}>
-                        {STATUS_MAP[os].label}
+                        {index + 1}. {STATUS_MAP[os]?.label || os}
                       </option>
                     ))}
                   </select>
                 </div>
 
+                <div>
+                  <label className="block text-xs font-semibold text-natural-espresso/70 mb-1">📅 วันที่เปลี่ยนสถานะล่าสุด</label>
+                  <input
+                    type="date"
+                    value={statusDate}
+                    onChange={(e) => setStatusDate(e.target.value)}
+                    className="w-full text-sm px-3 py-2 rounded-xl border border-natural-wheat focus:outline-none focus:ring-2 focus:ring-natural-clay/20 focus:border-natural-clay bg-natural-cream/10 font-medium"
+                  />
+                </div>
+
                 <div className="col-span-2 pt-2 border-t border-natural-sand/50">
                   <label className="block text-xs font-semibold text-natural-espresso/70 mb-2 flex items-center space-x-1.5">
                     <ImageIcon className="h-3.5 w-3.5 text-natural-clay" />
-                    <span>รูปภาพสลิปชำระเงิน (Payment Slip Reference)</span>
+                    <span>รูปภาพหลักฐานสลิปการโอนเงิน/เงินสด/บัตรเครดิต (Payment Slip Reference)</span>
                   </label>
                   
                   {slipImage ? (
@@ -766,7 +795,7 @@ export default function EditOrderModal({ order, onClose, onSave }: EditOrderModa
                           referrerPolicy="no-referrer"
                         />
                         <div>
-                          <p className="text-xs font-bold text-natural-espresso">แนบรูปสลิปเรียบร้อย ✓</p>
+                          <p className="text-xs font-bold text-natural-espresso">แนบหลักฐานชำระเงินเรียบร้อย ✓</p>
                           <p className="text-[10px] text-natural-espresso/50">คลิกปุ่มสีแดงเพื่อลบหรือเปลี่ยนรูปภาพ</p>
                         </div>
                       </div>
@@ -774,7 +803,7 @@ export default function EditOrderModal({ order, onClose, onSave }: EditOrderModa
                         type="button"
                         onClick={() => setSlipImage('')}
                         className="p-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-full transition-all cursor-pointer mr-1"
-                        title="ลบสลิป"
+                        title="ลบหลักฐาน"
                       >
                         <X className="h-4 w-4" />
                       </button>
@@ -795,7 +824,7 @@ export default function EditOrderModal({ order, onClose, onSave }: EditOrderModa
                       />
                       <div className="flex flex-col items-center justify-center space-y-1">
                         <UploadCloud className="h-6 w-6 text-natural-clay/75" />
-                        <p className="text-xs font-bold text-natural-espresso">อัปโหลดสลิปเงินโอน/ชำระเงิน</p>
+                        <p className="text-xs font-bold text-natural-espresso">อัปโหลดสลิปเงินโอน/เงินสด/บัตรเครดิต</p>
                         <p className="text-[10px] text-natural-espresso/40 font-medium">คลิก หรือลากไฟล์ภาพมาวาง</p>
                       </div>
                     </div>
@@ -1341,72 +1370,110 @@ export default function EditOrderModal({ order, onClose, onSave }: EditOrderModa
 
                 {customerCategory !== 'IDH' && (
                   <>
-                    {/* Front View */}
+                    {/* Front View (Required) */}
                     <div className="space-y-2">
-                      <p className="text-xs font-bold text-natural-espresso/75 text-center">สัดส่วน ด้านหน้า</p>
+                      <p className="text-xs font-bold text-natural-espresso/80 text-center">
+                        สัดส่วน ด้านหน้า <span className="text-red-500">*</span>
+                      </p>
                       {customerPhotoFront ? (
-                        <div className="relative rounded-xl overflow-hidden border border-natural-wheat h-36 bg-natural-sand/5 flex items-center justify-center group">
+                        <div className="relative rounded-xl overflow-hidden border border-emerald-300 h-36 bg-emerald-50/10 flex items-center justify-center group">
                           <img src={customerPhotoFront} alt="Front" className="h-full w-full object-contain" referrerPolicy="no-referrer" />
                           <button 
                             type="button" 
                             onClick={() => setCustomerPhotoFront('')} 
                             className="absolute top-1.5 right-1.5 p-1 bg-red-500/80 text-white rounded-full hover:bg-red-600 transition-all cursor-pointer"
+                            title="ลบภาพ"
                           >
                             <X className="h-3 w-3" />
                           </button>
                         </div>
                       ) : (
-                        <div className="relative border-2 border-dashed border-natural-sand/50 hover:border-natural-clay/40 rounded-xl h-36 flex flex-col items-center justify-center transition-all bg-natural-cream/5 hover:bg-natural-sand/10 text-center">
+                        <div className="relative border-2 border-dashed border-red-300 hover:border-red-400 rounded-xl h-36 flex flex-col items-center justify-center transition-all bg-red-50/10 hover:bg-red-50/20 text-center">
                           <input 
                             type="file" 
                             accept="image/*" 
                             onChange={(e) => e.target.files?.[0] && handleImageUpload(e.target.files[0], 'front')} 
                             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" 
                           />
-                          <UploadCloud className="h-5 w-5 text-natural-clay/60 mb-1" />
-                          <span className="text-[10px] text-natural-espresso/50">อัปโหลดด้านหน้า</span>
+                          <UploadCloud className="h-5 w-5 text-red-500/70 mb-1" />
+                          <span className="text-[10px] text-red-600 font-bold">อัปโหลดด้านหน้า *</span>
                         </div>
                       )}
                     </div>
 
-                    {/* Side View */}
+                    {/* Side View (Required) */}
                     <div className="space-y-2">
-                      <p className="text-xs font-bold text-natural-espresso/75 text-center">สัดส่วน ด้านข้าง</p>
+                      <p className="text-xs font-bold text-natural-espresso/80 text-center">
+                        สัดส่วน ด้านข้าง <span className="text-red-500">*</span>
+                      </p>
                       {customerPhotoSide ? (
-                        <div className="relative rounded-xl overflow-hidden border border-natural-wheat h-36 bg-natural-sand/5 flex items-center justify-center group">
+                        <div className="relative rounded-xl overflow-hidden border border-emerald-300 h-36 bg-emerald-50/10 flex items-center justify-center group">
                           <img src={customerPhotoSide} alt="Side" className="h-full w-full object-contain" referrerPolicy="no-referrer" />
                           <button 
                             type="button" 
                             onClick={() => setCustomerPhotoSide('')} 
                             className="absolute top-1.5 right-1.5 p-1 bg-red-500/80 text-white rounded-full hover:bg-red-600 transition-all cursor-pointer"
+                            title="ลบภาพ"
                           >
                             <X className="h-3 w-3" />
                           </button>
                         </div>
                       ) : (
-                        <div className="relative border-2 border-dashed border-natural-sand/50 hover:border-natural-clay/40 rounded-xl h-36 flex flex-col items-center justify-center transition-all bg-natural-cream/5 hover:bg-natural-sand/10 text-center">
+                        <div className="relative border-2 border-dashed border-red-300 hover:border-red-400 rounded-xl h-36 flex flex-col items-center justify-center transition-all bg-red-50/10 hover:bg-red-50/20 text-center">
                           <input 
                             type="file" 
                             accept="image/*" 
                             onChange={(e) => e.target.files?.[0] && handleImageUpload(e.target.files[0], 'side')} 
                             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" 
                           />
-                          <UploadCloud className="h-5 w-5 text-natural-clay/60 mb-1" />
-                          <span className="text-[10px] text-natural-espresso/50">อัปโหลดด้านข้าง</span>
+                          <UploadCloud className="h-5 w-5 text-red-500/70 mb-1" />
+                          <span className="text-[10px] text-red-600 font-bold">อัปโหลดด้านข้าง *</span>
                         </div>
                       )}
                     </div>
 
-                    {/* Back View */}
+                    {/* Back View (Required) */}
                     <div className="space-y-2">
-                      <p className="text-xs font-bold text-natural-espresso/75 text-center">สัดส่วน ด้านหลัง</p>
+                      <p className="text-xs font-bold text-natural-espresso/80 text-center">
+                        สัดส่วน ด้านหลัง <span className="text-red-500">*</span>
+                      </p>
                       {customerPhotoBack ? (
-                        <div className="relative rounded-xl overflow-hidden border border-natural-wheat h-36 bg-natural-sand/5 flex items-center justify-center group">
+                        <div className="relative rounded-xl overflow-hidden border border-emerald-300 h-36 bg-emerald-50/10 flex items-center justify-center group">
                           <img src={customerPhotoBack} alt="Back" className="h-full w-full object-contain" referrerPolicy="no-referrer" />
                           <button 
                             type="button" 
                             onClick={() => setCustomerPhotoBack('')} 
                             className="absolute top-1.5 right-1.5 p-1 bg-red-500/80 text-white rounded-full hover:bg-red-600 transition-all cursor-pointer"
+                            title="ลบภาพ"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="relative border-2 border-dashed border-red-300 hover:border-red-400 rounded-xl h-36 flex flex-col items-center justify-center transition-all bg-red-50/10 hover:bg-red-50/20 text-center">
+                          <input 
+                            type="file" 
+                            accept="image/*" 
+                            onChange={(e) => e.target.files?.[0] && handleImageUpload(e.target.files[0], 'back')} 
+                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" 
+                          />
+                          <UploadCloud className="h-5 w-5 text-red-500/70 mb-1" />
+                          <span className="text-[10px] text-red-600 font-bold">อัปโหลดด้านหลัง *</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Extra View 1 */}
+                    <div className="space-y-2">
+                      <p className="text-xs font-bold text-natural-espresso/70 text-center">ภาพเพิ่มเติม 1</p>
+                      {customerPhotoExtra1 ? (
+                        <div className="relative rounded-xl overflow-hidden border border-natural-wheat h-36 bg-natural-sand/5 flex items-center justify-center group">
+                          <img src={customerPhotoExtra1} alt="Extra 1" className="h-full w-full object-contain" referrerPolicy="no-referrer" />
+                          <button 
+                            type="button" 
+                            onClick={() => setCustomerPhotoExtra1('')} 
+                            className="absolute top-1.5 right-1.5 p-1 bg-red-500/80 text-white rounded-full hover:bg-red-600 transition-all cursor-pointer"
+                            title="ลบภาพ"
                           >
                             <X className="h-3 w-3" />
                           </button>
@@ -1416,11 +1483,40 @@ export default function EditOrderModal({ order, onClose, onSave }: EditOrderModa
                           <input 
                             type="file" 
                             accept="image/*" 
-                            onChange={(e) => e.target.files?.[0] && handleImageUpload(e.target.files[0], 'back')} 
+                            onChange={(e) => e.target.files?.[0] && handleImageUpload(e.target.files[0], 'extra1')} 
                             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" 
                           />
                           <UploadCloud className="h-5 w-5 text-natural-clay/60 mb-1" />
-                          <span className="text-[10px] text-natural-espresso/50">อัปโหลดด้านหลัง</span>
+                          <span className="text-[10px] text-natural-espresso/50">อัปโหลดเพิ่มเติม 1</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Extra View 2 */}
+                    <div className="space-y-2">
+                      <p className="text-xs font-bold text-natural-espresso/70 text-center">ภาพเพิ่มเติม 2</p>
+                      {customerPhotoExtra2 ? (
+                        <div className="relative rounded-xl overflow-hidden border border-natural-wheat h-36 bg-natural-sand/5 flex items-center justify-center group">
+                          <img src={customerPhotoExtra2} alt="Extra 2" className="h-full w-full object-contain" referrerPolicy="no-referrer" />
+                          <button 
+                            type="button" 
+                            onClick={() => setCustomerPhotoExtra2('')} 
+                            className="absolute top-1.5 right-1.5 p-1 bg-red-500/80 text-white rounded-full hover:bg-red-600 transition-all cursor-pointer"
+                            title="ลบภาพ"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="relative border-2 border-dashed border-natural-sand/50 hover:border-natural-clay/40 rounded-xl h-36 flex flex-col items-center justify-center transition-all bg-natural-cream/5 hover:bg-natural-sand/10 text-center">
+                          <input 
+                            type="file" 
+                            accept="image/*" 
+                            onChange={(e) => e.target.files?.[0] && handleImageUpload(e.target.files[0], 'extra2')} 
+                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" 
+                          />
+                          <UploadCloud className="h-5 w-5 text-natural-clay/60 mb-1" />
+                          <span className="text-[10px] text-natural-espresso/50">อัปโหลดเพิ่มเติม 2</span>
                         </div>
                       )}
                     </div>

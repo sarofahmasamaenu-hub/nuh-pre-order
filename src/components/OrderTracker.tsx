@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Order, OrderStatus, STATUS_MAP, StatusConfig, CatalogueItem } from '../types';
+import { Order, OrderStatus, STATUS_MAP, StatusConfig, CatalogueItem, PRODUCTION_PIPELINE_STEPS } from '../types';
 import { 
   Search, 
   Filter, 
@@ -19,6 +19,7 @@ import {
   Scissors, 
   Compass, 
   Trash2,
+  Check,
   CheckCircle,
   Clock,
   ArrowRight,
@@ -47,7 +48,7 @@ import SignatureModal from './SignatureModal';
 interface OrderTrackerProps {
   orders: Order[];
   catalogue?: CatalogueItem[];
-  onUpdateOrderStatus: (orderId: string, nextStatus: OrderStatus) => void;
+  onUpdateOrderStatus: (orderId: string, nextStatus: OrderStatus, customStatusDate?: string, note?: string) => void;
   onDeleteOrder: (orderId: string) => void;
   onEditOrder?: (updatedOrder: Order) => void;
   onConfirmPickupSignature?: (orderId: string, signatureDataUrl: string, signeeName: string, signedAt: string) => void;
@@ -62,6 +63,30 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
   const [showExportModal, setShowExportModal] = useState(false);
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
   const [signatureModalOrder, setSignatureModalOrder] = useState<Order | null>(null);
+
+  // Quick Status Update Modal State
+  const [statusModalOrder, setStatusModalOrder] = useState<Order | null>(null);
+  const [statusModalTarget, setStatusModalTarget] = useState<OrderStatus>(OrderStatus.RECEIVED);
+  const [statusModalDate, setStatusModalDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
+  const [statusModalNote, setStatusModalNote] = useState<string>('');
+
+  const handleOpenStatusModal = (order: Order, targetStatus?: OrderStatus) => {
+    setStatusModalOrder(order);
+    setStatusModalTarget(targetStatus || order.status || OrderStatus.RECEIVED);
+    setStatusModalDate(order.statusDate || new Date().toISOString().split('T')[0]);
+    setStatusModalNote('');
+  };
+
+  const handleSaveStatusModal = () => {
+    if (!statusModalOrder) return;
+    onUpdateOrderStatus(
+      statusModalOrder.id,
+      statusModalTarget,
+      statusModalDate,
+      statusModalNote.trim() || undefined
+    );
+    setStatusModalOrder(null);
+  };
 
   const [publicUrl, setPublicUrl] = useState(() => {
     return localStorage.getItem('nunuh_public_url') || window.location.origin;
@@ -558,7 +583,7 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
     return Math.max(0, order.price - order.deposit - (order.discount || 0) - (order.finalPaymentAmount || 0));
   };
 
-  const statusList = Object.values(OrderStatus);
+  const statusList = PRODUCTION_PIPELINE_STEPS;
 
   const generateTSV = () => {
     const headers = [
@@ -574,6 +599,7 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
       'เนื้อผ้า',
       'เฉดสี',
       'สถานะ',
+      'วันที่เปลี่ยนสถานะล่าสุด',
       'วันที่สั่งซื้อ',
       'กำหนดส่ง',
       'ราคา',
@@ -630,6 +656,7 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
         o.fabricType,
         o.fabricColor || '-',
         STATUS_MAP[o.status]?.label || o.status,
+        o.statusDate || o.orderDate,
         o.orderDate,
         o.deliveryDate,
         o.price,
@@ -661,7 +688,7 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
   const downloadCSV = () => {
     const headers = [
       'Order Number', 'Branch', 'Customer Name', 'Phone', 'Social Contact', 'Job Type', 'Membership Card Type', 'External Order ID', 'Dress Type', 
-      'Fabric Type', 'Fabric Color', 'Status', 'Order Date', 'Delivery Date', 
+      'Fabric Type', 'Fabric Color', 'Status', 'Status Date', 'Order Date', 'Delivery Date', 
       'Price', 'Discount', 'Deposit', 'Payment Method', 'Unpaid Balance', 'Chest', 'Waist', 'Hips', 
       'Shoulder', 'Sleeve Length', 'Armhole', 'Dress Length', 'Height', 'Weight', 'Front Chest', 'Back Chest', 'Front Length', 'Back Length', 'Wrist', 'Other Notes'
     ];
@@ -698,6 +725,7 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
         `"${o.fabricType.replace(/"/g, '""')}"`,
         `"${(o.fabricColor || '-').replace(/"/g, '""')}"`,
         `"${STATUS_MAP[o.status]?.label || o.status}"`,
+        `"${o.statusDate || o.orderDate}"`,
         `"${o.orderDate}"`,
         `"${o.deliveryDate}"`,
         o.price,
@@ -1273,9 +1301,23 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
                         <span className="font-mono text-xs font-extrabold bg-natural-espresso text-natural-cream px-2 py-0.5 rounded">
                           {order.orderNumber}
                         </span>
-                        <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full border ${currentStatusCfg.colorClass}`}>
+                        <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border ${currentStatusCfg.colorClass}`}>
                           {currentStatusCfg.label}
                         </span>
+                        <span className="text-[10px] font-semibold text-natural-espresso/70 bg-natural-sand/50 border border-natural-wheat/80 px-2 py-0.5 rounded-md flex items-center gap-1">
+                          <Clock className="h-3 w-3 text-natural-clay" /> วันที่สถานะ: {order.statusDate || order.orderDate}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenStatusModal(order);
+                          }}
+                          className="text-[10px] font-bold text-natural-clay hover:text-white bg-natural-clay/10 hover:bg-natural-clay border border-natural-clay/30 px-2 py-0.5 rounded-md transition-all cursor-pointer flex items-center gap-1 shadow-3xs"
+                          title="คลิกเพื่อเปลี่ยนสถานะและระบุวันที่"
+                        >
+                          <span>⚡ ปรับสถานะ & วันที่</span>
+                        </button>
                         {(order.isLocked || order.pickupSignature) && (
                           <span className="bg-amber-100 text-amber-950 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border border-amber-300 flex items-center gap-1 shadow-3xs">
                             <Lock className="h-3 w-3 text-amber-700" />
@@ -1406,50 +1448,101 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
                 {isExpanded && (
                   <div className="border-t border-natural-sand bg-natural-sand/20 p-5 rounded-b-2xl space-y-6">
                     
-                    {/* Visual Progress Stepper */}
-                    <div className="space-y-2">
-                      <p className="text-xs font-bold text-natural-espresso/60 uppercase tracking-wider flex items-center">
-                        <Clock className="h-3.5 w-3.5 mr-1.5" /> ขั้นตอนติดตามงานตัดเย็บ (Update Status Pipeline)
-                      </p>
-                      
-                      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 pt-1">
-                        {statusList.map((status, index) => {
-                          const isActive = order.status === status;
-                          const isPast = statusList.indexOf(order.status) > index;
-                          const cfg = STATUS_MAP[status];
+                    {/* Visual Progress & Status Selector */}
+                    <div className="bg-white border border-natural-wheat/80 rounded-2xl p-4 space-y-4 shadow-3xs">
+                      <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-natural-sand/60">
+                        <div className="flex items-center gap-2">
+                          <span className="w-7 h-7 rounded-lg bg-natural-sand flex items-center justify-center text-natural-clay font-bold text-xs">
+                            {Math.max(1, PRODUCTION_PIPELINE_STEPS.indexOf(order.status as OrderStatus) + 1)}
+                          </span>
+                          <div>
+                            <p className="text-[11px] font-bold text-natural-espresso/60 uppercase tracking-wider">
+                              สถานะขั้นตอนการผลิต (ขั้นตอนที่ {Math.max(1, PRODUCTION_PIPELINE_STEPS.indexOf(order.status as OrderStatus) + 1)} จาก {PRODUCTION_PIPELINE_STEPS.length})
+                            </p>
+                            <p className="text-sm font-extrabold text-natural-espresso">
+                              {STATUS_MAP[order.status]?.label || order.status}
+                            </p>
+                          </div>
+                        </div>
 
-                          return (
-                            <button
-                              key={status}
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onUpdateOrderStatus(order.id, status);
-                              }}
-                              className={`p-2.5 rounded-xl text-center border text-xs transition-all relative flex flex-col justify-between h-20 group cursor-pointer ${
-                                isActive 
-                                  ? 'bg-natural-espresso border-natural-espresso text-natural-cream shadow-sm scale-[1.02]' 
-                                  : isPast 
-                                    ? 'bg-natural-sand/70 border-natural-wheat text-natural-espresso/60 hover:bg-natural-sand/90' 
-                                    : 'bg-white border-natural-wheat text-natural-espresso/40 hover:border-natural-ochre/35'
-                              }`}
-                            >
-                              <div className="font-bold block tracking-tight text-[11px]">
-                                {index + 1}. {cfg.label}
-                              </div>
-                              <span className={`text-[9px] block text-left mt-1 font-normal leading-tight opacity-90 line-clamp-2 ${isActive ? 'text-natural-sand/80' : 'text-natural-espresso/50'}`}>
-                                {cfg.description}
-                              </span>
-                              
-                              {/* Hover tooltip hint */}
-                              <div className="absolute bottom-1 right-2 opacity-0 group-hover:opacity-100 transition-all text-[8px] font-bold text-natural-clay">
-                                คลิกเพื่อปรับ &rarr;
-                              </div>
-                            </button>
-                          );
-                        })}
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] font-semibold text-natural-clay bg-natural-sand/60 border border-natural-wheat/80 px-2.5 py-1 rounded-lg flex items-center gap-1">
+                            <Clock className="h-3 w-3 text-natural-clay" /> วันที่สถานะ: {order.statusDate || order.orderDate}
+                          </span>
+                        </div>
                       </div>
+
+                      {/* Dropdown Selector for 22 statuses */}
+                      <div className="bg-natural-sand/20 border border-natural-wheat/70 p-3 rounded-xl flex flex-col md:flex-row items-stretch md:items-center gap-2.5">
+                        <div className="flex-1">
+                          <label className="block text-[11px] font-bold text-natural-espresso/70 mb-1">
+                            🔄 เลือกเปลี่ยนสถานะ (22 ขั้นตอน):
+                          </label>
+                          <select
+                            value={order.status}
+                            onChange={(e) => {
+                              const newSt = e.target.value as OrderStatus;
+                              handleOpenStatusModal(order, newSt);
+                            }}
+                            className="w-full text-xs font-bold px-3 py-2 rounded-xl border border-natural-wheat bg-white text-natural-espresso focus:ring-2 focus:ring-natural-clay/20 cursor-pointer shadow-3xs"
+                          >
+                            {PRODUCTION_PIPELINE_STEPS.map((status, index) => (
+                              <option key={status} value={status}>
+                                {index + 1}. {STATUS_MAP[status]?.label || status}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="flex items-end gap-2 pt-1 md:pt-0">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenStatusModal(order);
+                            }}
+                            className="w-full md:w-auto text-xs font-bold text-white bg-natural-espresso hover:bg-natural-clay px-4 py-2 rounded-xl transition-all cursor-pointer shadow-xs flex items-center justify-center gap-1.5 shrink-0"
+                          >
+                            <span>⚡ ปรับสถานะ & ระบุวันที่</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {STATUS_MAP[order.status]?.description && (
+                        <p className="text-xs text-natural-espresso/70 bg-natural-cream/30 p-2.5 rounded-xl border border-natural-wheat/40">
+                          ℹ️ <strong>รายละเอียดขั้นตอน:</strong> {STATUS_MAP[order.status].description}
+                        </p>
+                      )}
                     </div>
+
+                    {/* Status History Timeline Log */}
+                    {order.statusHistory && order.statusHistory.length > 0 && (
+                      <div className="bg-natural-cream/30 border border-natural-wheat/80 rounded-2xl p-4 space-y-2.5">
+                        <h6 className="text-xs font-bold text-natural-espresso flex items-center gap-1.5">
+                          <History className="h-3.5 w-3.5 text-natural-clay" /> ประวัติการเปลี่ยนสถานะ & บันทึกย้อนหลัง (Status History Logs)
+                        </h6>
+                        <div className="space-y-1.5">
+                          {order.statusHistory.map((h, hIdx) => (
+                            <div key={hIdx} className="flex items-start justify-between text-[11px] bg-white/90 p-2.5 rounded-xl border border-natural-wheat/50 shadow-3xs gap-2">
+                              <div className="space-y-0.5">
+                                <span className="font-bold text-natural-espresso">
+                                  {STATUS_MAP[h.status as OrderStatus]?.label || h.status}
+                                </span>
+                                {h.note && (
+                                  <p className="text-[10px] text-natural-espresso/70 italic">
+                                    หมายเหตุ: {h.note}
+                                  </p>
+                                )}
+                              </div>
+                              <div className="text-right shrink-0 text-[10px] text-natural-espresso/60 font-mono">
+                                <div>📅 {h.date}</div>
+                                {h.updatedBy && <div className="text-[9px] text-natural-clay">โดย: {h.updatedBy}</div>}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
                     {/* Customer Pickup Signature Block / Trigger Button */}
                     {order.pickupSignature ? (
@@ -2062,10 +2155,10 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
                         <span className="text-[10px] text-natural-espresso/50 font-medium">ภาพสัดส่วนเพื่อความแม่นยำในการทำแพทเทิร์น</span>
                       </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3.5">
                         {/* Front View */}
                         <div className="space-y-2">
-                          <p className="text-[11px] font-bold text-natural-espresso/70 text-center">ภาพถ่ายด้านหน้า (Front View)</p>
+                          <p className="text-[11px] font-bold text-natural-espresso/70 text-center">ภาพถ่ายด้านหน้า (Front)</p>
                           {order.customerPhotoFront ? (
                             <div className="relative rounded-xl overflow-hidden border border-natural-wheat bg-natural-sand/5 max-h-48 group flex items-center justify-center">
                               <img 
@@ -2083,7 +2176,7 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
                               />
                             </div>
                           ) : (
-                            <div className="border border-dashed border-natural-sand rounded-xl p-6 text-center text-natural-espresso/45 bg-natural-cream/10 text-xs italic flex flex-col items-center justify-center h-32">
+                            <div className="border border-dashed border-natural-sand rounded-xl p-4 text-center text-natural-espresso/45 bg-natural-cream/10 text-xs italic flex flex-col items-center justify-center h-28">
                               <span>ไม่มีรูปถ่ายด้านหน้า</span>
                             </div>
                           )}
@@ -2091,7 +2184,7 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
 
                         {/* Side View */}
                         <div className="space-y-2">
-                          <p className="text-[11px] font-bold text-natural-espresso/70 text-center">ภาพถ่ายด้านข้าง (Side View)</p>
+                          <p className="text-[11px] font-bold text-natural-espresso/70 text-center">ภาพถ่ายด้านข้าง (Side)</p>
                           {order.customerPhotoSide ? (
                             <div className="relative rounded-xl overflow-hidden border border-natural-wheat bg-natural-sand/5 max-h-48 group flex items-center justify-center">
                               <img 
@@ -2109,7 +2202,7 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
                               />
                             </div>
                           ) : (
-                            <div className="border border-dashed border-natural-sand rounded-xl p-6 text-center text-natural-espresso/45 bg-natural-cream/10 text-xs italic flex flex-col items-center justify-center h-32">
+                            <div className="border border-dashed border-natural-sand rounded-xl p-4 text-center text-natural-espresso/45 bg-natural-cream/10 text-xs italic flex flex-col items-center justify-center h-28">
                               <span>ไม่มีรูปถ่ายด้านข้าง</span>
                             </div>
                           )}
@@ -2117,7 +2210,7 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
 
                         {/* Back View */}
                         <div className="space-y-2">
-                          <p className="text-[11px] font-bold text-natural-espresso/70 text-center">ภาพถ่ายด้านหลัง (Back View)</p>
+                          <p className="text-[11px] font-bold text-natural-espresso/70 text-center">ภาพถ่ายด้านหลัง (Back)</p>
                           {order.customerPhotoBack ? (
                             <div className="relative rounded-xl overflow-hidden border border-natural-wheat bg-natural-sand/5 max-h-48 group flex items-center justify-center">
                               <img 
@@ -2135,8 +2228,60 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
                               />
                             </div>
                           ) : (
-                            <div className="border border-dashed border-natural-sand rounded-xl p-6 text-center text-natural-espresso/45 bg-natural-cream/10 text-xs italic flex flex-col items-center justify-center h-32">
+                            <div className="border border-dashed border-natural-sand rounded-xl p-4 text-center text-natural-espresso/45 bg-natural-cream/10 text-xs italic flex flex-col items-center justify-center h-28">
                               <span>ไม่มีรูปถ่ายด้านหลัง</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Extra View 1 */}
+                        <div className="space-y-2">
+                          <p className="text-[11px] font-bold text-natural-espresso/70 text-center">ภาพเพิ่มเติม 1</p>
+                          {order.customerPhotoExtra1 ? (
+                            <div className="relative rounded-xl overflow-hidden border border-natural-wheat bg-natural-sand/5 max-h-48 group flex items-center justify-center">
+                              <img 
+                                src={order.customerPhotoExtra1} 
+                                alt="Extra proportion 1" 
+                                className="w-full object-contain max-h-48 rounded-lg cursor-zoom-in"
+                                referrerPolicy="no-referrer"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const imgWindow = window.open();
+                                  if (imgWindow) {
+                                    imgWindow.document.write(`<img src="${order.customerPhotoExtra1}" style="max-width:100%; max-height:100vh; display:block; margin:auto;"/>`);
+                                  }
+                                }}
+                              />
+                            </div>
+                          ) : (
+                            <div className="border border-dashed border-natural-sand rounded-xl p-4 text-center text-natural-espresso/45 bg-natural-cream/10 text-xs italic flex flex-col items-center justify-center h-28">
+                              <span>ไม่มีภาพเพิ่มเติม 1</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Extra View 2 */}
+                        <div className="space-y-2">
+                          <p className="text-[11px] font-bold text-natural-espresso/70 text-center">ภาพเพิ่มเติม 2</p>
+                          {order.customerPhotoExtra2 ? (
+                            <div className="relative rounded-xl overflow-hidden border border-natural-wheat bg-natural-sand/5 max-h-48 group flex items-center justify-center">
+                              <img 
+                                src={order.customerPhotoExtra2} 
+                                alt="Extra proportion 2" 
+                                className="w-full object-contain max-h-48 rounded-lg cursor-zoom-in"
+                                referrerPolicy="no-referrer"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const imgWindow = window.open();
+                                  if (imgWindow) {
+                                    imgWindow.document.write(`<img src="${order.customerPhotoExtra2}" style="max-width:100%; max-height:100vh; display:block; margin:auto;"/>`);
+                                  }
+                                }}
+                              />
+                            </div>
+                          ) : (
+                            <div className="border border-dashed border-natural-sand rounded-xl p-4 text-center text-natural-espresso/45 bg-natural-cream/10 text-xs italic flex flex-col items-center justify-center h-28">
+                              <span>ไม่มีภาพเพิ่มเติม 2</span>
                             </div>
                           )}
                         </div>
@@ -2266,6 +2411,102 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
             setEditingOrder(null);
           }}
         />
+      )}
+
+      {/* Quick Status and Date Update Modal */}
+      {statusModalOrder && (
+        <div className="fixed inset-0 bg-natural-espresso/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-natural-wheat relative space-y-5 animate-scale-up">
+            <button
+              type="button"
+              onClick={() => setStatusModalOrder(null)}
+              className="absolute top-4 right-4 text-natural-espresso/40 hover:text-natural-espresso p-1.5 rounded-lg hover:bg-natural-sand transition-colors cursor-pointer"
+            >
+              ✕
+            </button>
+
+            <div className="flex items-center space-x-3 border-b border-natural-sand pb-3">
+              <div className="w-10 h-10 rounded-xl bg-natural-sand flex items-center justify-center text-natural-clay font-bold text-lg">
+                ⚡
+              </div>
+              <div>
+                <h3 className="font-serif font-bold text-lg text-natural-espresso">
+                  ปรับปรุงสถานะงาน & วันที่อัปเดต
+                </h3>
+                <p className="text-xs text-natural-espresso/60 font-mono">
+                  ออเดอร์: {statusModalOrder.orderNumber} ({statusModalOrder.customerName})
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-natural-espresso/70 mb-1.5">
+                  เลือกขั้นตอนสถานะ (22 ขั้นตอนติดตาม):
+                </label>
+                <select
+                  value={statusModalTarget}
+                  onChange={(e) => setStatusModalTarget(e.target.value as OrderStatus)}
+                  className="w-full text-sm px-3.5 py-2.5 rounded-xl border border-natural-wheat bg-natural-cream/20 font-bold text-natural-espresso focus:ring-2 focus:ring-natural-clay/20 focus:border-natural-clay cursor-pointer"
+                >
+                  {PRODUCTION_PIPELINE_STEPS.map((os, index) => (
+                    <option key={os} value={os}>
+                      {index + 1}. {STATUS_MAP[os]?.label || os}
+                    </option>
+                  ))}
+                </select>
+                {STATUS_MAP[statusModalTarget]?.description && (
+                  <p className="text-[11px] text-natural-clay font-medium mt-1.5 bg-natural-sand/30 p-2 rounded-lg border border-natural-wheat/40">
+                    ℹ️ {STATUS_MAP[statusModalTarget].description}
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-natural-espresso/70 mb-1.5 flex items-center gap-1.5">
+                  <Clock className="h-3.5 w-3.5 text-natural-clay" /> วันที่เปลี่ยนสถานะ:
+                </label>
+                <input
+                  type="date"
+                  value={statusModalDate}
+                  onChange={(e) => setStatusModalDate(e.target.value)}
+                  className="w-full text-sm px-3.5 py-2 rounded-xl border border-natural-wheat bg-natural-cream/10 font-semibold focus:ring-2 focus:ring-natural-clay/20 focus:border-natural-clay"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-natural-espresso/70 mb-1.5">
+                  บันทึกโน้ตเพิ่มเติม (ถ้ามี เช่น เลขพัสดุ EMS / ผลการลองชุด):
+                </label>
+                <textarea
+                  rows={2}
+                  value={statusModalNote}
+                  onChange={(e) => setStatusModalNote(e.target.value)}
+                  placeholder="เช่น ส่ง EMS แล้ว หมายเลข ED123456789TH หรือ ลูกค้าแจ้งขอเก็บเอวเข้า 1 ซม."
+                  className="w-full text-xs p-3 rounded-xl border border-natural-wheat focus:ring-2 focus:ring-natural-clay/20 focus:border-natural-clay"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end space-x-2.5 pt-2 border-t border-natural-sand">
+              <button
+                type="button"
+                onClick={() => setStatusModalOrder(null)}
+                className="px-4 py-2 bg-natural-sand hover:bg-natural-wheat text-natural-espresso font-bold text-xs rounded-xl transition-colors cursor-pointer"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveStatusModal}
+                className="px-5 py-2 bg-natural-espresso hover:bg-natural-clay text-natural-cream font-bold text-xs rounded-xl shadow-xs transition-all cursor-pointer flex items-center space-x-1.5"
+              >
+                <Check className="h-4 w-4" />
+                <span>บันทึกสถานะ</span>
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {signatureModalOrder && (

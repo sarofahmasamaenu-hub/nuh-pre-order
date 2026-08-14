@@ -4,14 +4,68 @@
  */
 
 export enum OrderStatus {
-  RECEIVED = "RECEIVED",       // รับออเดอร์เรียบร้อย
-  DESIGNING = "DESIGNING",     // อยู่ในขั้นตอนการออกแบบ/สรุปแบบ
-  CUTTING = "CUTTING",       // กำลังตัดผ้า
-  SEWING = "SEWING",         // กำลังขึ้นโครง/เย็บประกอบ
-  FITTING = "FITTING",        // ขั้นตอนฟิตติ้ง/ปรับแต่งตัว
-  READY = "READY",          // ตัดเย็บเสร็จสมบูรณ์พร้อมส่งมอบ
-  COMPLETED = "COMPLETED"     // ส่งมอบให้ลูกค้าเรียบร้อย
+  RECEIVED = "RECEIVED",                                         // 1. รับออร์เดอร์จากลูกค้าพร้อมลงระบบ
+  VERIFY_DETAILS = "VERIFY_DETAILS",                             // 2. ตรวจสอบรายละเอียดพร้อมเข้าสู่การผลิต
+  PREPARE_PRODUCTION = "PREPARE_PRODUCTION",                     // 3. เตรียมออร์เดอร์เข้าสู่การผลิต (พิมพ์ใบสั่งตัด)
+  PATTERN_SEWING = "PATTERN_SEWING",                             // 4. ระหว่างการทำแพทเทรินและการเย็บชุด
+  EMBROIDERY = "EMBROIDERY",                                     // 5. ระหว่างการปัก
+  CRYSTAL_BEADING = "CRYSTAL_BEADING",                           // 6. ระหว่างการปักคริสตัล
+  QA_PROCESS = "QA_PROCESS",                                     // 7. ขั้นตอนการQA
+  SEND_TO_DC = "SEND_TO_DC",                                     // 8. จัดส่งสินค้าให้ศูนย์กระจายสินค้า
+  RECEIVED_AT_DC_QC = "RECEIVED_AT_DC_QC",                       // 9. ได้รับสินค้าพร้อมQC
+  SEND_TO_BRANCH = "SEND_TO_BRANCH",                             // 10. ส่งสินค้าไปหน้าสาขา
+  BRANCH_RECEIVED_CALL_FITTING1 = "BRANCH_RECEIVED_CALL_FITTING1", // 11. ตรวจรับสินค้าพร้อมแจ้งโทรนัดลูกค้าสำหรับ FITTING DAY1
+  FITTING_DONE = "FITTING_DONE",                                 // 12. ลูกค้าเข้ามาลองชุดเรียบร้อย
+  NEEDS_ALTERATION = "NEEDS_ALTERATION",                         // 13. ลูกค้าต้องการแก้ไขชุด
+  SEND_ALTERATION_EMS = "SEND_ALTERATION_EMS",                   // 14. จัดส่งชุดที่ต้องการแก้ไขทางส่งไปรษณีย์ (EMS)
+  RECEIVED_FOR_ALTERATION = "RECEIVED_FOR_ALTERATION",           // 15. ได้รับชุดสำหรับแก้ไข Date
+  IN_ALTERATION = "IN_ALTERATION",                               // 16. อยู่ระหว่างกการแก้ไขชุด
+  SEND_ALTERED_EMS = "SEND_ALTERED_EMS",                         // 17. จัดส่งชุดแก้ไขเรียบร้อยแล้วทางส่งไปรษณีย์ (EMS)
+  RECEIVED_ALTERED_DC = "RECEIVED_ALTERED_DC",                   // 18. ตรวจรับชุดที่แก้ไข
+  SEND_ALTERED_TO_BRANCH = "SEND_ALTERED_TO_BRANCH",             // 19. จัดส่งชุดที่แก้ไขไปที่สาขา
+  BRANCH_RECEIVED_ALTERED_NOTIFIED = "BRANCH_RECEIVED_ALTERED_NOTIFIED", // 20. ตรวจรับชุดที่แก้ไขแล้ว พร้อมโทรแจ้งลูกค้า
+  AWAITING_PICKUP = "AWAITING_PICKUP",                           // 21. รอลูกค้ามารับชุดหน้าสาขา
+  COMPLETED = "COMPLETED",                                       // 22. ลูกค้ารับชุดและจบงาน
+  
+  // Legacy aliases to maintain backward compatibility with previous records
+  DESIGNING = "DESIGNING",
+  CUTTING = "CUTTING",
+  SEWING = "SEWING",
+  FITTING = "FITTING",
+  READY = "READY"
 }
+
+export interface StatusHistoryEntry {
+  status: OrderStatus | string;
+  date: string;              // วันที่เปลี่ยนสถานะ (YYYY-MM-DD)
+  note?: string;             // หมายเหตุเพิ่มเติม เช่น เลขพัสดุ EMS หรือผลการฟิตติ้ง
+  updatedBy?: string;        // ชื่อพนักงานที่บันทึก
+}
+
+export const PRODUCTION_PIPELINE_STEPS: OrderStatus[] = [
+  OrderStatus.RECEIVED,
+  OrderStatus.VERIFY_DETAILS,
+  OrderStatus.PREPARE_PRODUCTION,
+  OrderStatus.PATTERN_SEWING,
+  OrderStatus.EMBROIDERY,
+  OrderStatus.CRYSTAL_BEADING,
+  OrderStatus.QA_PROCESS,
+  OrderStatus.SEND_TO_DC,
+  OrderStatus.RECEIVED_AT_DC_QC,
+  OrderStatus.SEND_TO_BRANCH,
+  OrderStatus.BRANCH_RECEIVED_CALL_FITTING1,
+  OrderStatus.FITTING_DONE,
+  OrderStatus.NEEDS_ALTERATION,
+  OrderStatus.SEND_ALTERATION_EMS,
+  OrderStatus.RECEIVED_FOR_ALTERATION,
+  OrderStatus.IN_ALTERATION,
+  OrderStatus.SEND_ALTERED_EMS,
+  OrderStatus.RECEIVED_ALTERED_DC,
+  OrderStatus.SEND_ALTERED_TO_BRANCH,
+  OrderStatus.BRANCH_RECEIVED_ALTERED_NOTIFIED,
+  OrderStatus.AWAITING_PICKUP,
+  OrderStatus.COMPLETED
+];
 
 export interface Measurements {
   chest: string;        // รอบอก (ซม.)
@@ -58,15 +112,19 @@ export interface Order {
   finalPaymentMethod?: string; // ช่องทางการชำระเงินส่วนต่างคงเหลือ (เงินโอน, เงินสด, บัตรเครดิต)
   measurements: Measurements;
   status: OrderStatus;
+  statusDate?: string;       // วันที่เปลี่ยนสถานะล่าสุด (YYYY-MM-DD)
+  statusHistory?: StatusHistoryEntry[]; // ประวัติและวันที่ของการเปลี่ยนสถานะในแต่ละขั้นตอน
   notes?: string;
   selectedDesignId?: string; // ไอดีแบบชุดจากแคตตาล็อก (ถ้ามี)
   sku?: string;              // รหัสสินค้า / SKU
   customDesign?: CustomDesignDetails;
   customImage?: string; // ภาพชุดอ้างอิงแนบมา (Base64 string หรือรูปภาพจากแคตตาล็อก)
   customImage2?: string; // ภาพชุดอ้างอิงแนบมา ช่องที่ 2 (Base64 string หรือรูปภาพจากแคตตาล็อก)
-  customerPhotoFront?: string; // ภาพถ่ายลูกค้า ด้านหน้า
-  customerPhotoSide?: string;  // ภาพถ่ายลูกค้า ด้านข้าง
-  customerPhotoBack?: string;  // ภาพถ่ายลูกค้า ด้านหลัง
+  customerPhotoFront?: string; // ภาพถ่ายลูกค้า ด้านหน้า (บังคับ)
+  customerPhotoSide?: string;  // ภาพถ่ายลูกค้า ด้านข้าง (บังคับ)
+  customerPhotoBack?: string;  // ภาพถ่ายลูกค้า ด้านหลัง (บังคับ)
+  customerPhotoExtra1?: string; // ภาพถ่ายเพิ่มเติม 1 (เช่น สัดส่วน/รายละเอียดพิเศษ)
+  customerPhotoExtra2?: string; // ภาพถ่ายเพิ่มเติม 2 (เช่น สัดส่วน/รายละเอียดพิเศษ)
   branch?: string;           // สาขาที่รับออเดอร์ (สาขานราธิวาส, สาขายะลา, สาขาปัตตานี, สาขาหาดใหญ่)
   staffName?: string;        // ชื่อพนักงานผู้รับออเดอร์
   staffBranch?: string;      // สาขาของพนักงานผู้รับออเดอร์
@@ -135,32 +193,202 @@ export interface StatusConfig {
 
 export const STATUS_MAP: Record<OrderStatus, StatusConfig> = {
   [OrderStatus.RECEIVED]: {
-    label: "รับออเดอร์",
-    description: "รับรายละเอียดการสั่งซื้อและวัดตัวเรียบร้อย",
-    colorClass: "bg-natural-sand/80 text-natural-espresso border-natural-wheat",
-    bgBorderClass: "border-natural-wheat bg-natural-sand/20",
-    textColor: "text-natural-espresso",
+    label: "รับออร์เดอร์จากลูกค้าพร้อมลงระบบ",
+    description: "รับรายละเอียดการสั่งซื้อ สัดส่วน และบันทึกข้อมูลเข้าระบบเรียบร้อย",
+    colorClass: "bg-amber-50 text-amber-900 border-amber-300",
+    bgBorderClass: "border-amber-300 bg-amber-50/40",
+    textColor: "text-amber-900",
     icon: "ClipboardCheck"
   },
+  [OrderStatus.VERIFY_DETAILS]: {
+    label: "ตรวจสอบรายละเอียดพร้อมเข้าสู่การผลิต",
+    description: "ตรวจสอบความถูกต้องของสัดส่วน ชนิดผ้า และแบบชุดก่อนเริ่มผลิต",
+    colorClass: "bg-orange-50 text-orange-900 border-orange-300",
+    bgBorderClass: "border-orange-300 bg-orange-50/40",
+    textColor: "text-orange-900",
+    icon: "FileCheck"
+  },
+  [OrderStatus.PREPARE_PRODUCTION]: {
+    label: "เตรียมออร์เดอร์เข้าสู่การผลิต (พิมพ์ใบสั่งตัด)",
+    description: "พิมพ์ใบสั่งตัด เตรียมวัสดุ อุปกรณ์ และส่งต่องานเข้าห้องตัด",
+    colorClass: "bg-sky-50 text-sky-900 border-sky-300",
+    bgBorderClass: "border-sky-300 bg-sky-50/40",
+    textColor: "text-sky-900",
+    icon: "Printer"
+  },
+  [OrderStatus.PATTERN_SEWING]: {
+    label: "ระหว่างการทำแพทเทรินและการเย็บชุด",
+    description: "ช่างขึ้นแพทเทิร์น วางผ้า ตัด และขึ้นโครงเย็บประกอบชิ้นงาน",
+    colorClass: "bg-indigo-50 text-indigo-900 border-indigo-300",
+    bgBorderClass: "border-indigo-300 bg-indigo-50/40",
+    textColor: "text-indigo-900",
+    icon: "Scissors"
+  },
+  [OrderStatus.EMBROIDERY]: {
+    label: "ระหว่างการปัก",
+    description: "ช่างฝีมืออยู่ระหว่างลงลวดลายปักลายผ้าตามที่กำหนด",
+    colorClass: "bg-purple-50 text-purple-900 border-purple-300",
+    bgBorderClass: "border-purple-300 bg-purple-50/40",
+    textColor: "text-purple-900",
+    icon: "Palette"
+  },
+  [OrderStatus.CRYSTAL_BEADING]: {
+    label: "ระหว่างการปักคริสตัล",
+    description: "ช่างคูตูร์อยู่ระหว่างปักประดับคริสตัลและลูกปัดชั้นสูง",
+    colorClass: "bg-fuchsia-50 text-fuchsia-900 border-fuchsia-300",
+    bgBorderClass: "border-fuchsia-300 bg-fuchsia-50/40",
+    textColor: "text-fuchsia-900",
+    icon: "Sparkles"
+  },
+  [OrderStatus.QA_PROCESS]: {
+    label: "ขั้นตอนการQA",
+    description: "ตรวจสอบคุณภาพและความเรียบร้อยของชุดก่อนส่งออกจากแผนกตัดเย็บ",
+    colorClass: "bg-cyan-50 text-cyan-900 border-cyan-300",
+    bgBorderClass: "border-cyan-300 bg-cyan-50/40",
+    textColor: "text-cyan-900",
+    icon: "ShieldCheck"
+  },
+  [OrderStatus.SEND_TO_DC]: {
+    label: "จัดส่งสินค้าให้ศูนย์กระจายสินค้า",
+    description: "บรรจุหีบห่อและนำส่งชุดไปยังศูนย์กระจายสินค้ากลาง",
+    colorClass: "bg-blue-50 text-blue-900 border-blue-300",
+    bgBorderClass: "border-blue-300 bg-blue-50/40",
+    textColor: "text-blue-900",
+    icon: "Truck"
+  },
+  [OrderStatus.RECEIVED_AT_DC_QC]: {
+    label: "ได้รับสินค้าพร้อมQC",
+    description: "ศูนย์กระจายสินค้ารับชุดและตรวจนับเช็ค QC รอบสมบูรณ์",
+    colorClass: "bg-teal-50 text-teal-900 border-teal-300",
+    bgBorderClass: "border-teal-300 bg-teal-50/40",
+    textColor: "text-teal-900",
+    icon: "CheckSquare"
+  },
+  [OrderStatus.SEND_TO_BRANCH]: {
+    label: "ส่งสินค้าไปหน้าสาขา",
+    description: "จัดส่งสินค้าจากศูนย์กระจายสินค้ามุ่งหน้าสู่สาขาปลายทาง",
+    colorClass: "bg-sky-100 text-sky-950 border-sky-300",
+    bgBorderClass: "border-sky-300 bg-sky-50/40",
+    textColor: "text-sky-950",
+    icon: "Send"
+  },
+  [OrderStatus.BRANCH_RECEIVED_CALL_FITTING1]: {
+    label: "ตรวจรับสินค้าพร้อมแจ้งโทรนัดลูกค้าสำหรับ FITTING DAY1",
+    description: "สาขาตรวจรับชุดและโทรนัดหมายลูกค้าเข้ามาลองชุดครั้งแรก",
+    colorClass: "bg-violet-50 text-violet-900 border-violet-300",
+    bgBorderClass: "border-violet-300 bg-violet-50/40",
+    textColor: "text-violet-900",
+    icon: "PhoneCall"
+  },
+  [OrderStatus.FITTING_DONE]: {
+    label: "ลูกค้าเข้ามาลองชุดเรียบร้อย",
+    description: "ลูกค้าเดินทางเข้ามาลองชุดและตรวจดูความพอดีเรียบร้อย",
+    colorClass: "bg-emerald-50 text-emerald-900 border-emerald-300",
+    bgBorderClass: "border-emerald-300 bg-emerald-50/40",
+    textColor: "text-emerald-900",
+    icon: "UserCheck"
+  },
+  [OrderStatus.NEEDS_ALTERATION]: {
+    label: "ลูกค้าต้องการแก้ไขชุด",
+    description: "บันทึกจุดที่ต้องแก้ไขและเก็บรายละเอียดตามที่ลูกค้าต้องการ",
+    colorClass: "bg-amber-50 text-amber-900 border-amber-300",
+    bgBorderClass: "border-amber-300 bg-amber-50/40",
+    textColor: "text-amber-900",
+    icon: "AlertCircle"
+  },
+  [OrderStatus.SEND_ALTERATION_EMS]: {
+    label: "จัดส่งชุดที่ต้องการแก้ไขทางส่งไปรษณีย์ (EMS)",
+    description: "ส่งชุดที่ต้องแก้ไขไปยังช่างแก้ไขผ่านพัสดุด่วน EMS",
+    colorClass: "bg-rose-50 text-rose-900 border-rose-300",
+    bgBorderClass: "border-rose-300 bg-rose-50/40",
+    textColor: "text-rose-900",
+    icon: "Package"
+  },
+  [OrderStatus.RECEIVED_FOR_ALTERATION]: {
+    label: "ได้รับชุดสำหรับแก้ไข Date",
+    description: "ช่างแก้ไขได้รับชุดเรียบร้อยและลงบันทึกวันที่รับงานแก้",
+    colorClass: "bg-pink-50 text-pink-900 border-pink-300",
+    bgBorderClass: "border-pink-300 bg-pink-50/40",
+    textColor: "text-pink-900",
+    icon: "CalendarCheck"
+  },
+  [OrderStatus.IN_ALTERATION]: {
+    label: "อยู่ระหว่างกการแก้ไขชุด",
+    description: "ช่างอยู่ระหว่างการปรับแก้ทรงและเย็บเก็บรายละเอียด",
+    colorClass: "bg-rose-100 text-rose-950 border-rose-300",
+    bgBorderClass: "border-rose-300 bg-rose-50/40",
+    textColor: "text-rose-950",
+    icon: "Wrench"
+  },
+  [OrderStatus.SEND_ALTERED_EMS]: {
+    label: "จัดส่งชุดแก้ไขเรียบร้อยแล้วทางส่งไปรษณีย์ (EMS)",
+    description: "ส่งชุดที่แก้ไขเสร็จแล้วกลับคืนมาผ่านพัสดุด่วน EMS",
+    colorClass: "bg-orange-50 text-orange-900 border-orange-300",
+    bgBorderClass: "border-orange-300 bg-orange-50/40",
+    textColor: "text-orange-900",
+    icon: "Truck"
+  },
+  [OrderStatus.RECEIVED_ALTERED_DC]: {
+    label: "ตรวจรับชุดที่แก้ไข",
+    description: "ตรวจรับและตรวจสอบความเรียบร้อยของชุดที่แก้ไขแล้ว",
+    colorClass: "bg-lime-50 text-lime-900 border-lime-300",
+    bgBorderClass: "border-lime-300 bg-lime-50/40",
+    textColor: "text-lime-900",
+    icon: "CheckCircle"
+  },
+  [OrderStatus.SEND_ALTERED_TO_BRANCH]: {
+    label: "จัดส่งชุดที่แก้ไขไปที่สาขา",
+    description: "นำส่งชุดที่แก้ไขเสร็จสมบูรณ์ไปยังสาขาหน้าร้าน",
+    colorClass: "bg-cyan-50 text-cyan-900 border-cyan-300",
+    bgBorderClass: "border-cyan-300 bg-cyan-50/40",
+    textColor: "text-cyan-900",
+    icon: "Send"
+  },
+  [OrderStatus.BRANCH_RECEIVED_ALTERED_NOTIFIED]: {
+    label: "ตรวจรับชุดที่แก้ไขแล้ว พร้อมโทรแจ้งลูกค้า",
+    description: "สาขาตรวจรับชุดที่แก้เสร็จแล้ว และโทรนัดหมายให้ลูกค้ารับชุด",
+    colorClass: "bg-emerald-50 text-emerald-900 border-emerald-300",
+    bgBorderClass: "border-emerald-300 bg-emerald-50/40",
+    textColor: "text-emerald-900",
+    icon: "PhoneForwarded"
+  },
+  [OrderStatus.AWAITING_PICKUP]: {
+    label: "รอลูกค้ามารับชุดหน้าสาขา",
+    description: "ชุดเตรียมพร้อมที่หน้าร้าน รอลูกค้าเดินทางมารับมอบชุด",
+    colorClass: "bg-amber-100 text-amber-950 border-amber-300 font-bold",
+    bgBorderClass: "border-amber-300 bg-amber-50/50",
+    textColor: "text-amber-950",
+    icon: "Clock"
+  },
+  [OrderStatus.COMPLETED]: {
+    label: "ลูกค้ารับชุดและจบงาน",
+    description: "ลูกค้าได้รับชุดเรียบร้อย เซ็นรับมอบ และจบงานสมบูรณ์แบบ",
+    colorClass: "bg-emerald-100 text-emerald-900 border-emerald-400 font-bold",
+    bgBorderClass: "border-emerald-400 bg-emerald-50/60",
+    textColor: "text-emerald-900",
+    icon: "Sparkles"
+  },
+
+  // Fallbacks for legacy status values
   [OrderStatus.DESIGNING]: {
     label: "ออกแบบและจัดเตรียม",
-    description: "กำลังวาดสเก็ตช์ จับคู่แพทเทิร์น และคัดสรรผืนผ้า",
-    colorClass: "bg-[rgba(185,98,72,0.1)] text-natural-clay border-natural-clay/20",
-    bgBorderClass: "border-natural-clay/30 bg-[rgba(185,98,72,0.05)]",
-    textColor: "text-natural-clay",
+    description: "กำลังวาดสเก็ตช์และคัดสรรผืนผ้า",
+    colorClass: "bg-orange-50 text-orange-900 border-orange-300",
+    bgBorderClass: "border-orange-300 bg-orange-50/40",
+    textColor: "text-orange-900",
     icon: "Palette"
   },
   [OrderStatus.CUTTING]: {
     label: "ขึ้นแบบและตัดผ้า",
     description: "กำลังวางแพทเทิร์นลงผ้าและตัดเตรียมชิ้นส่วน",
-    colorClass: "bg-[rgba(194,141,84,0.1)] text-natural-ochre border-natural-ochre/20",
-    bgBorderClass: "border-natural-ochre/30 bg-[rgba(194,141,84,0.05)]",
-    textColor: "text-natural-ochre",
+    colorClass: "bg-indigo-50 text-indigo-900 border-indigo-300",
+    bgBorderClass: "border-indigo-300 bg-indigo-50/40",
+    textColor: "text-indigo-900",
     icon: "Scissors"
   },
   [OrderStatus.SEWING]: {
     label: "ขึ้นโครงและเย็บประกอบ",
-    description: "ช่างฝีมืออยู่ระหว่างเย็บชิ้นส่วนเสื้อผ้าเข้าด้วยกัน",
+    description: "ช่างฝีมืออยู่ระหว่างเย็บชิ้นส่วนเสื้อผ้า",
     colorClass: "bg-stone-100 text-stone-700 border-stone-200",
     bgBorderClass: "border-stone-300 bg-stone-50/50",
     textColor: "text-stone-700",
@@ -168,27 +396,19 @@ export const STATUS_MAP: Record<OrderStatus, StatusConfig> = {
   },
   [OrderStatus.FITTING]: {
     label: "ฟิตติ้งและปรับแต่ง",
-    description: "ตรวจสอบความพอดีของโครงชุดหรือรอฟิตติ้งรอบสอง",
-    colorClass: "bg-[rgba(152,78,55,0.12)] text-natural-clay-dark border-natural-clay-dark/20",
-    bgBorderClass: "border-natural-clay-dark/30 bg-[rgba(152,78,55,0.05)]",
-    textColor: "text-natural-clay-dark",
+    description: "ตรวจสอบความพอดีของโครงชุด",
+    colorClass: "bg-violet-50 text-violet-900 border-violet-300",
+    bgBorderClass: "border-violet-300 bg-violet-50/40",
+    textColor: "text-violet-900",
     icon: "Ruler"
   },
   [OrderStatus.READY]: {
     label: "ตัดเย็บเรียบร้อย",
-    description: "ผ่านการตรวจสอบ QC รีด สตรีม และแพ็คเตรียมส่งมอบ",
-    colorClass: "bg-[rgba(93,114,96,0.12)] text-natural-sage border-natural-sage/20",
-    bgBorderClass: "border-natural-sage/30 bg-[rgba(93,114,96,0.05)]",
-    textColor: "text-natural-sage",
+    description: "ผ่านการตรวจสอบ QC และแพ็คเตรียมส่งมอบ",
+    colorClass: "bg-emerald-50 text-emerald-900 border-emerald-300",
+    bgBorderClass: "border-emerald-300 bg-emerald-50/40",
+    textColor: "text-emerald-900",
     icon: "Sparkles"
-  },
-  [OrderStatus.COMPLETED]: {
-    label: "ส่งมอบสำเร็จ",
-    description: "ชุดถึงมือลูกค้าอย่างปลอดภัยและสมบูรณ์แบบ",
-    colorClass: "bg-stone-200/50 text-stone-500 border-stone-300",
-    bgBorderClass: "border-stone-300 bg-stone-100/50",
-    textColor: "text-stone-500",
-    icon: "CheckCircle2"
   }
 };
 
