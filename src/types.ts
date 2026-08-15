@@ -128,6 +128,7 @@ export interface Order {
   branch?: string;           // สาขาที่รับออเดอร์ (สาขานราธิวาส, สาขายะลา, สาขาปัตตานี, สาขาหาดใหญ่)
   staffName?: string;        // ชื่อพนักงานผู้รับออเดอร์
   staffBranch?: string;      // สาขาของพนักงานผู้รับออเดอร์
+  tailorName?: string;       // ชื่อช่างตัดเย็บ / ช่างแพทเทิร์น / ผู้รับผิดชอบตัดเย็บ (Tailor / Seamstress)
   paymentMethod?: string;      // ช่องทางการชำระเงิน (เงินโอน, เงินสด, บัตรเครดิต)
   customerCategory?: string;   // ประเภทงาน เช่น IDD, IDH, ทั่วไป
   membershipTier?: 'PRIME' | 'PRIVILEGE' | 'TRADER' | 'MEMBER'; // ประเภทบัตรสมาชิก
@@ -179,6 +180,7 @@ export interface CatalogueItem {
   features: string[];        // จุดเด่นของชุด
   sizes?: string[];          // ไซส์มาตรฐานที่มีให้เลือก เช่น SS, S, M, L, XL
   sizePrices?: Record<string, number>; // ราคาสำหรับแต่ละไซส์
+  tailorName?: string;       // ชื่อช่างตัดเย็บ / ช่างแพทเทิร์นผู้ออกแบบหรือรับผิดชอบแบบชุดนี้ (Tailor / Seamstress)
 }
 
 // แผนผังคำแปลและสีสถานะ

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Order, OrderStatus, STATUS_MAP, StatusConfig, CatalogueItem, PRODUCTION_PIPELINE_STEPS } from '../types';
 import { 
   Search, 
@@ -44,7 +44,12 @@ import PrintOrderModal from './PrintOrderModal';
 import EditOrderModal from './EditOrderModal';
 import FeedbackSection from './FeedbackSection';
 import SignatureModal from './SignatureModal';
-import { getDaysDifference, formatStatusDurationTimeline } from '../utils/dateDuration';
+import { 
+  getDaysDifference, 
+  formatStatusDurationTimeline, 
+  formatAllStatusDatesLog, 
+  formatFullStatusHistorySummary 
+} from '../utils/dateDuration';
 
 interface OrderTrackerProps {
   orders: Order[];
@@ -59,6 +64,13 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL_ACTIVE'); // ALL, ALL_ACTIVE, or specific status
   const [branchFilter, setBranchFilter] = useState<string>('ALL');
+  const [tailorFilter, setTailorFilter] = useState<string>('ALL');
+
+  // รายชื่อช่างตัดเย็บทั้งหมดที่มีในระบบ เพื่อใช้ในตัวกรองค้นหา
+  const allTailors = useMemo(() => {
+    const list = orders.map(o => o.tailorName?.trim()).filter(Boolean) as string[];
+    return Array.from(new Set(list)).sort();
+  }, [orders]);
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
   const [printingOrder, setPrintingOrder] = useState<Order | null>(null);
   const [showExportModal, setShowExportModal] = useState(false);
@@ -552,17 +564,29 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
 
   // การกรองข้อมูล
   const filteredOrders = orders.filter((order) => {
-    // กรองด้วยคำค้นหา (ชื่อ เบอร์ หรือเลขที่ออเดอร์ หรือ SKU)
+    // กรองด้วยคำค้นหา (ชื่อ เบอร์ เลขที่ออเดอร์ ชื่อช่างตัดเย็บ หรือ SKU)
     const matchesSearch = 
       order.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       order.customerPhone.includes(searchQuery) ||
       order.orderNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
       order.dressType.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (order.tailorName && order.tailorName.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      (order.staffName && order.staffName.toLowerCase().includes(searchQuery.toLowerCase())) ||
       (order.sku && order.sku.toLowerCase().includes(searchQuery.toLowerCase())) ||
       (order.idhNumber && order.idhNumber.toLowerCase().includes(searchQuery.toLowerCase()));
 
     // กรองด้วยสาขา
     const matchesBranch = branchFilter === 'ALL' || order.branch === branchFilter;
+
+    // กรองด้วยช่างตัดเย็บ
+    let matchesTailor = true;
+    if (tailorFilter === 'ALL') {
+      matchesTailor = true;
+    } else if (tailorFilter === 'UNASSIGNED') {
+      matchesTailor = !order.tailorName || order.tailorName.trim() === '';
+    } else {
+      matchesTailor = order.tailorName === tailorFilter;
+    }
 
     // กรองด้วยสถานะ
     let matchesStatus = true;
@@ -574,7 +598,7 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
       matchesStatus = order.status === statusFilter;
     }
 
-    return matchesSearch && matchesBranch && matchesStatus;
+    return matchesSearch && matchesBranch && matchesTailor && matchesStatus;
   });
 
   const toggleExpand = (orderId: string) => {
@@ -597,6 +621,7 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
       'ประเภทงาน',
       'ประเภทบัตรสมาชิก',
       'รหัสออเดอร์จากกัน',
+      'ช่างตัดเย็บ',
       'ประเภทชุด',
       'เนื้อผ้า',
       'เฉดสี',
@@ -606,12 +631,17 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
       'วันที่สั่งซื้อ',
       'กำหนดส่ง',
       'ระยะเวลารวมตั้งแต่สั่งตัด (วัน)',
+      'วันที่เปลี่ยนสถานะทุกขั้นตอน',
       'สรุปไทม์ไลน์และระยะเวลากี่วันในแต่ละสถานะ',
+      'ประวัติบันทึกสถานะและหมายเหตุทั้งหมด',
       'ราคา',
       'ส่วนลด',
-      'มัดจำ',
-      'ช่องทางการรับเงิน',
-      'ยอดคงเหลือ',
+      'ยอดมัดจำ',
+      'ช่องทางการรับเงินมัดจำ',
+      'ยอดชำระส่วนที่เหลือ',
+      'วันที่ชำระเงินส่วนที่เหลือ',
+      'ช่องทางชำระเงินส่วนที่เหลือ',
+      'ยอดค้างชำระ',
       'อก',
       'เอว',
       'สะโพก',
@@ -626,7 +656,8 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
       'ยาวหน้า',
       'ยาวหลัง',
       'ข้อมือ',
-      'บันทึกเพิ่มเติม'
+      'บันทึกสัดส่วนเพิ่มเติม',
+      'หมายเหตุออเดอร์'
     ];
 
     const todayStr = new Date().toISOString().split('T')[0];
@@ -655,7 +686,9 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
         o.orderDate, 
         o.status === OrderStatus.COMPLETED ? (o.statusDate || todayStr) : todayStr
       );
+      const allDatesLog = formatAllStatusDatesLog(o);
       const timelineDurationStr = formatStatusDurationTimeline(o);
+      const fullHistorySummary = formatFullStatusHistorySummary(o);
 
       return [
         o.orderNumber,
@@ -666,6 +699,7 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
         o.customerCategory || '-',
         o.membershipTier || '-',
         o.externalOrderId || '-',
+        o.tailorName || '-',
         o.dressType,
         o.fabricType,
         o.fabricColor || '-',
@@ -675,11 +709,16 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
         o.orderDate,
         o.deliveryDate,
         totalLeadDays,
+        allDatesLog,
         timelineDurationStr,
+        fullHistorySummary,
         o.price,
         o.discount || 0,
         o.deposit,
         pm,
+        o.finalPaymentAmount || 0,
+        o.finalPaymentDate || '-',
+        o.finalPaymentMethod || '-',
         unpaidDisplay,
         o.measurements.chest,
         o.measurements.waist,
@@ -695,7 +734,8 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
         o.measurements.frontLength || '-',
         o.measurements.backLength || '-',
         o.measurements.wrist || '-',
-        o.measurements.otherNotes || '-'
+        (o.measurements.otherNotes || '-').replace(/[\r\n\t]/g, ' '),
+        (o.notes || '-').replace(/[\r\n\t]/g, ' ')
       ];
     });
 
@@ -704,10 +744,11 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
 
   const downloadCSV = () => {
     const headers = [
-      'Order Number', 'Branch', 'Customer Name', 'Phone', 'Social Contact', 'Job Type', 'Membership Card Type', 'External Order ID', 'Dress Type', 
-      'Fabric Type', 'Fabric Color', 'Status', 'Status Date', 'Days in Current Status', 'Order Date', 'Delivery Date', 'Total Days Since Order', 'Status Duration Timeline',
-      'Price', 'Discount', 'Deposit', 'Payment Method', 'Unpaid Balance', 'Chest', 'Waist', 'Hips', 
-      'Shoulder', 'Sleeve Length', 'Armhole', 'Dress Length', 'Height', 'Weight', 'Front Chest', 'Back Chest', 'Front Length', 'Back Length', 'Wrist', 'Other Notes'
+      'Order Number', 'Branch', 'Customer Name', 'Phone', 'Social Contact', 'Job Type', 'Membership Card Type', 'External Order ID', 'Tailor Name', 'Dress Type', 
+      'Fabric Type', 'Fabric Color', 'Current Status', 'Latest Status Date', 'Days in Current Status', 'Order Date', 'Delivery Date', 'Total Days Since Order', 
+      'All Status Dates Log', 'Status Duration Timeline', 'Full History Log & Notes',
+      'Price', 'Discount', 'Deposit', 'Deposit Payment Method', 'Final Payment Amount', 'Final Payment Date', 'Final Payment Method', 'Unpaid Balance', 
+      'Chest', 'Waist', 'Hips', 'Shoulder', 'Sleeve Length', 'Armhole', 'Dress Length', 'Height', 'Weight', 'Front Chest', 'Back Chest', 'Front Length', 'Back Length', 'Wrist', 'Measurements Notes', 'Order Notes'
     ];
 
     const todayStr = new Date().toISOString().split('T')[0];
@@ -736,7 +777,9 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
         o.orderDate, 
         o.status === OrderStatus.COMPLETED ? (o.statusDate || todayStr) : todayStr
       );
+      const allDatesLog = formatAllStatusDatesLog(o);
       const timelineDurationStr = formatStatusDurationTimeline(o);
+      const fullHistorySummary = formatFullStatusHistorySummary(o);
 
       return [
         `"${o.orderNumber}"`,
@@ -747,6 +790,7 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
         `"${o.customerCategory || '-'}"`,
         `"${o.membershipTier || '-'}"`,
         `"${o.externalOrderId || '-'}"`,
+        `"${(o.tailorName || '-').replace(/"/g, '""')}"`,
         `"${o.dressType.replace(/"/g, '""')}"`,
         `"${o.fabricType.replace(/"/g, '""')}"`,
         `"${(o.fabricColor || '-').replace(/"/g, '""')}"`,
@@ -756,11 +800,16 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
         `"${o.orderDate}"`,
         `"${o.deliveryDate}"`,
         `${totalLeadDays}`,
+        `"${allDatesLog.replace(/"/g, '""')}"`,
         `"${timelineDurationStr.replace(/"/g, '""')}"`,
+        `"${fullHistorySummary.replace(/"/g, '""')}"`,
         o.price,
         o.discount || 0,
         o.deposit,
         `"${pm}"`,
+        o.finalPaymentAmount || 0,
+        `"${o.finalPaymentDate || '-'}"`,
+        `"${o.finalPaymentMethod || '-'}"`,
         typeof unpaidDisplay === 'number' ? unpaidDisplay : `"${unpaidDisplay}"`,
         `"${o.measurements.chest}"`,
         `"${o.measurements.waist}"`,
@@ -776,7 +825,8 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
         `"${o.measurements.frontLength || '-'}"`,
         `"${o.measurements.backLength || '-'}"`,
         `"${o.measurements.wrist || '-'}"`,
-        `"${(o.measurements.otherNotes || '-').replace(/"/g, '""')}"`
+        `"${(o.measurements.otherNotes || '-').replace(/"/g, '""')}"`,
+        `"${(o.notes || '-').replace(/"/g, '""')}"`
       ];
     });
 
@@ -785,7 +835,7 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `NUNUH_Orders_Export_${new Date().toISOString().slice(0,10)}.csv`);
+    link.setAttribute('download', `NUNUH_Orders_Master_${new Date().toISOString().slice(0,10)}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -798,17 +848,26 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
       'สาขา',
       'ชื่อลูกค้า',
       'เบอร์โทรศัพท์',
+      'ช่องทางติดต่อ',
+      'ประเภทงาน',
+      'ประเภทบัตรสมาชิก',
+      'ช่างตัดเย็บ',
       'ประเภทชุด',
+      'เนื้อผ้า',
+      'เฉดสี',
       'วันที่สั่งซื้อ',
       'กำหนดส่ง',
-      'ลำดับขั้นตอน',
+      'ลำดับขั้นตอนที่เปลี่ยน',
       'สถานะ / ขั้นตอนการทำงาน',
-      'วันที่เริ่มต้นสถานะนี้',
-      'วันที่เปลี่ยนสู่สถานะถัดไป / ปัจจุบัน',
+      'วันที่เริ่มต้นสถานะนี้ (วันที่เปลี่ยนสถานะ)',
+      'วันที่เปลี่ยนสู่สถานะถัดไป / วันปัจจุบัน',
       'ระยะเวลาที่ใช้ในสถานะนี้ (วัน)',
+      'ระยะเวลารวมสะสมตั้งแต่สั่งตัดถึงขั้นตอนนี้ (วัน)',
       'สถานะของขั้นตอนนี้',
-      'ผู้บันทึก',
-      'หมายเหตุ'
+      'สถานะปัจจุบันของออเดอร์',
+      'รวมระยะเวลาออเดอร์ตั้งแต่สั่งตัดจนถึงปัจจุบัน (วัน)',
+      'ผู้บันทึกการเปลี่ยนสถานะ',
+      'บันทึก / หมายเหตุของสถานะนั้น'
     ];
 
     const rows: (string | number)[][] = [];
@@ -824,14 +883,21 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
             updatedBy: o.staffName || 'พนักงาน'
           }];
 
+      const totalOrderDays = getDaysDifference(
+        o.orderDate, 
+        o.status === OrderStatus.COMPLETED ? (o.statusDate || todayStr) : todayStr
+      );
+
       history.forEach((h, idx) => {
         const isLast = idx === history.length - 1;
         const nextDate = isLast
           ? (o.status === OrderStatus.COMPLETED ? (o.statusDate || h.date) : todayStr)
           : history[idx + 1].date;
 
-        const days = getDaysDifference(h.date, nextDate);
+        const daysInStage = getDaysDifference(h.date, nextDate);
+        const cumulativeDays = getDaysDifference(o.orderDate, nextDate);
         const statusLabel = STATUS_MAP[h.status as OrderStatus]?.label || h.status;
+        const currentOrderStatusLabel = STATUS_MAP[o.status as OrderStatus]?.label || o.status;
         const progressLabel = isLast
           ? (o.status === OrderStatus.COMPLETED ? 'เสร็จสิ้นสมบูรณ์' : 'กำลังดำเนินการ (สถานะปัจจุบัน)')
           : 'ผ่านขั้นตอนนี้แล้ว';
@@ -841,15 +907,24 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
           o.branch || 'สาขานราธิวาส',
           o.customerName,
           o.customerPhone,
+          o.customerSocial || '-',
+          o.customerCategory || '-',
+          o.membershipTier || '-',
+          o.tailorName || '-',
           o.dressType,
+          o.fabricType,
+          o.fabricColor || '-',
           o.orderDate,
           o.deliveryDate,
           idx + 1,
           statusLabel,
           h.date,
           nextDate,
-          days,
+          daysInStage,
+          cumulativeDays,
           progressLabel,
+          currentOrderStatusLabel,
+          totalOrderDays,
           h.updatedBy || o.staffName || '-',
           (h.note || '-').replace(/[\r\n\t]/g, ' ')
         ]);
@@ -861,9 +936,10 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
 
   const downloadTransitionsCSV = () => {
     const headers = [
-      'Order Number', 'Branch', 'Customer Name', 'Phone', 'Dress Type', 'Order Date', 'Delivery Date',
-      'History Sequence', 'Status / Stage', 'Stage Start Date', 'Stage End Date / Transition Date',
-      'Duration (Days)', 'Stage Status', 'Updated By', 'Notes'
+      'Order Number', 'Branch', 'Customer Name', 'Phone', 'Social Contact', 'Job Type', 'Membership Tier', 'Tailor Name', 'Dress Type', 'Fabric Type', 'Fabric Color',
+      'Order Date', 'Delivery Date', 'History Step Number', 'Status / Stage', 'Stage Start Date (Change Date)', 'Stage End Date / Next Date',
+      'Duration in Stage (Days)', 'Cumulative Days from Order Date', 'Stage Progress Status', 'Current Order Status', 'Total Order Days Since Order',
+      'Recorded By', 'Stage Notes'
     ];
 
     const rows: string[][] = [];
@@ -879,14 +955,21 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
             updatedBy: o.staffName || 'พนักงาน'
           }];
 
+      const totalOrderDays = getDaysDifference(
+        o.orderDate, 
+        o.status === OrderStatus.COMPLETED ? (o.statusDate || todayStr) : todayStr
+      );
+
       history.forEach((h, idx) => {
         const isLast = idx === history.length - 1;
         const nextDate = isLast
           ? (o.status === OrderStatus.COMPLETED ? (o.statusDate || h.date) : todayStr)
           : history[idx + 1].date;
 
-        const days = getDaysDifference(h.date, nextDate);
+        const daysInStage = getDaysDifference(h.date, nextDate);
+        const cumulativeDays = getDaysDifference(o.orderDate, nextDate);
         const statusLabel = STATUS_MAP[h.status as OrderStatus]?.label || h.status;
+        const currentOrderStatusLabel = STATUS_MAP[o.status as OrderStatus]?.label || o.status;
         const progressLabel = isLast
           ? (o.status === OrderStatus.COMPLETED ? 'เสร็จสิ้นสมบูรณ์' : 'กำลังดำเนินการ (สถานะปัจจุบัน)')
           : 'ผ่านขั้นตอนนี้แล้ว';
@@ -896,15 +979,24 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
           `"${o.branch || 'สาขานราธิวาส'}"`,
           `"${o.customerName.replace(/"/g, '""')}"`,
           `"${o.customerPhone}"`,
+          `"${(o.customerSocial || '-').replace(/"/g, '""')}"`,
+          `"${o.customerCategory || '-'}"`,
+          `"${o.membershipTier || '-'}"`,
+          `"${(o.tailorName || '-').replace(/"/g, '""')}"`,
           `"${o.dressType.replace(/"/g, '""')}"`,
+          `"${o.fabricType.replace(/"/g, '""')}"`,
+          `"${(o.fabricColor || '-').replace(/"/g, '""')}"`,
           `"${o.orderDate}"`,
           `"${o.deliveryDate}"`,
           `${idx + 1}`,
           `"${statusLabel.replace(/"/g, '""')}"`,
           `"${h.date}"`,
           `"${nextDate}"`,
-          `${days}`,
+          `${daysInStage}`,
+          `${cumulativeDays}`,
           `"${progressLabel}"`,
+          `"${currentOrderStatusLabel.replace(/"/g, '""')}"`,
+          `${totalOrderDays}`,
           `"${(h.updatedBy || o.staffName || '-').replace(/"/g, '""')}"`,
           `"${(h.note || '-').replace(/"/g, '""').replace(/[\r\n]/g, ' ')}"`
         ]);
@@ -1319,7 +1411,7 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4.5 w-4.5 text-natural-espresso/40" />
           <input
             type="text"
-            placeholder="ค้นหาชื่อลูกค้า, เบอร์โทรศัพท์, หมายเลขสั่งซื้อ..."
+            placeholder="ค้นหาชื่อลูกค้า, เบอร์โทรศัพท์, หมายเลขสั่งซื้อ, ชื่อช่างตัดเย็บ, SKU..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full text-sm pl-10 pr-4 py-2.5 rounded-xl border border-natural-wheat focus:outline-none focus:ring-2 focus:ring-natural-clay/20 focus:border-natural-clay bg-natural-cream/20"
@@ -1363,7 +1455,8 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
                   setStatusFilter(e.target.value);
                 }
               }}
-              className="text-xs bg-natural-sand border-transparent font-semibold px-3 py-2 rounded-xl text-natural-espresso focus:outline-none focus:ring-2 focus:ring-natural-clay/20 cursor-pointer"
+              style={{ width: '200px' }}
+              className="w-[200px] text-xs bg-natural-sand border-transparent font-semibold px-3 py-2 rounded-xl text-natural-espresso focus:outline-none focus:ring-2 focus:ring-natural-clay/20 cursor-pointer"
             >
               <option value="SELECT">📍 กรองเฉพาะสถานะ...</option>
               {statusList.map((status) => (
@@ -1374,11 +1467,30 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
             </select>
           </div>
 
+          {/* Tailor Filter */}
+          <div className="relative inline-block text-left">
+            <select
+              value={tailorFilter}
+              onChange={(e) => setTailorFilter(e.target.value)}
+              style={{ width: '190px' }}
+              className="w-[190px] text-xs bg-emerald-50 text-emerald-900 border border-emerald-300 font-semibold px-3 py-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20 cursor-pointer shadow-3xs"
+            >
+              <option value="ALL">✂️ ช่างตัดเย็บทั้งหมด {allTailors.length > 0 ? `(${allTailors.length} คน)` : ''}</option>
+              {allTailors.map((tailor) => (
+                <option key={tailor} value={tailor}>
+                  ช่าง: {tailor}
+                </option>
+              ))}
+              <option value="UNASSIGNED">⚪ ยังไม่ระบุช่าง</option>
+            </select>
+          </div>
+
           <div className="relative inline-block text-left">
             <select
               value={branchFilter}
               onChange={(e) => setBranchFilter(e.target.value)}
-              className="text-xs bg-purple-50 text-purple-900 border border-purple-200 font-semibold px-3 py-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500/20 cursor-pointer"
+              style={{ width: '150px' }}
+              className="w-[150px] text-xs bg-purple-50 text-purple-900 border border-purple-200 font-semibold px-3 py-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500/20 cursor-pointer"
             >
               <option value="ALL">🏪 ทุกสาขา</option>
               <option value="สาขานราธิวาส">สาขานราธิวาส</option>
@@ -1512,6 +1624,12 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
                         {order.staffName && (
                           <span className="bg-amber-50 text-amber-900 text-[10px] font-extrabold px-2 py-0.5 rounded border border-amber-200">
                             👤 พนักงาน: {order.staffName}
+                          </span>
+                        )}
+                        {order.tailorName && (
+                          <span className="bg-emerald-50 text-emerald-900 text-[10px] font-extrabold px-2 py-0.5 rounded border border-emerald-300 flex items-center gap-1 shadow-3xs">
+                            <Scissors className="h-3 w-3 text-emerald-700" />
+                            <span>ช่าง: {order.tailorName}</span>
                           </span>
                         )}
                         {order.isMatchingSet && (
@@ -1989,6 +2107,14 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
                               <p className="flex items-center">
                                 <span className="font-semibold text-natural-espresso/60 mr-1.5">🔗 รหัสออเดอร์จากกัน:</span>
                                 <span className="font-bold text-sky-800 bg-sky-50 px-1.5 py-0.5 rounded border border-sky-200 text-[10px] font-mono">{order.externalOrderId}</span>
+                              </p>
+                            )}
+                            {order.tailorName && (
+                              <p className="flex items-center">
+                                <span className="font-semibold text-natural-espresso/60 mr-1.5">✂️ ช่างตัดเย็บ:</span>
+                                <span className="font-bold text-emerald-900 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-300 text-xs flex items-center gap-1">
+                                  <span>{order.tailorName}</span>
+                                </span>
                               </p>
                             )}
                             <p>

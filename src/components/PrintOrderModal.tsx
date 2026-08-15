@@ -479,6 +479,9 @@ export default function PrintOrderModal({ order, isOpen, onClose }: PrintOrderMo
                     {order.staffName && (
                       <p className="text-natural-espresso/80 font-bold text-[11px] mt-0.5">👤 พนักงานรับออเดอร์: <span className="text-amber-900 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 text-[10px] inline-block">{order.staffName}</span></p>
                     )}
+                    {order.tailorName && (
+                      <p className="text-natural-espresso/80 font-bold text-[11px] mt-0.5">✂️ ช่างตัดเย็บ / ผู้รับผิดชอบ: <span className="text-emerald-900 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-300 text-[10px] font-bold inline-block">{order.tailorName}</span></p>
+                    )}
                     {order.isMatchingSet && (
                       <p className="text-natural-espresso/80 font-bold text-[11px] mt-0.5">✨ งานเข้าชุด: <span className="text-amber-900 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-300 text-[10px] font-bold inline-block">{order.idhNumber ? `IDH: ${order.idhNumber}` : 'ใช่'}</span></p>
                     )}

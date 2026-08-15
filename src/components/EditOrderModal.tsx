@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Order, OrderStatus, Measurements, STATUS_MAP, STANDARD_SIZE_CHART, PRODUCTION_PIPELINE_STEPS } from '../types';
-import { X, Save, User, Sparkles, Ruler, CreditCard, Image as ImageIcon, UploadCloud, Check, Lock, ShieldCheck } from 'lucide-react';
+import { X, Save, User, Sparkles, Ruler, CreditCard, Image as ImageIcon, UploadCloud, Check, Lock, ShieldCheck, Scissors } from 'lucide-react';
 import { INITIAL_CATALOGUE } from '../initialData';
 import { compressImage } from '../utils/image';
 
@@ -67,6 +67,7 @@ export default function EditOrderModal({ order, onClose, onSave }: EditOrderModa
   const [status, setStatus] = useState<OrderStatus>(order.status || OrderStatus.RECEIVED);
   const [statusDate, setStatusDate] = useState(order.statusDate || order.orderDate || new Date().toISOString().split('T')[0]);
   const [branch, setBranch] = useState(order.branch || 'สาขานราธิวาส');
+  const [tailorName, setTailorName] = useState(order.tailorName || '');
 
   // Measurements states
   const [chest, setChest] = useState(order.measurements.chest || '');
@@ -235,6 +236,7 @@ export default function EditOrderModal({ order, onClose, onSave }: EditOrderModa
       membershipTier,
       externalOrderId: externalOrderId.trim() || undefined,
       branch: branch.trim() || undefined,
+      tailorName: tailorName.trim() || undefined,
       dressType: dressType.trim(),
       fabricType: fabricType.trim(),
       fabricColor: fabricColor.trim(),

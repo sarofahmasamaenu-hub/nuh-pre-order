@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Order, OrderStatus, STATUS_MAP, Measurements, CatalogueItem, STANDARD_SIZE_CHART, PRODUCTION_PIPELINE_STEPS } from '../types';
-import { Save, User, Sparkles, Ruler, CreditCard, ChevronRight, Check, Image as ImageIcon, UploadCloud, X, History, Database, MessageSquare, PenTool, Eraser, ShieldCheck, Lock } from 'lucide-react';
+import { Save, User, Sparkles, Ruler, CreditCard, ChevronRight, Check, Image as ImageIcon, UploadCloud, X, History, Database, MessageSquare, PenTool, Eraser, ShieldCheck, Lock, Scissors } from 'lucide-react';
 import { compressImage } from '../utils/image';
 
 interface OrderFormProps {
@@ -41,6 +41,7 @@ export default function OrderForm({
   const [membershipTier, setMembershipTier] = useState<'PRIME' | 'PRIVILEGE' | 'TRADER' | 'MEMBER'>('MEMBER');
   const [externalOrderId, setExternalOrderId] = useState('');
   const [branch, setBranch] = useState(staffBranch || 'สาขานราธิวาส');
+  const [tailorName, setTailorName] = useState('');
   
   const [dressType, setDressType] = useState('เดรสราตรี');
   const [customDressType, setCustomDressType] = useState('');
@@ -274,6 +275,9 @@ export default function OrderForm({
         }
         setFabricType(selected.fabricRecommend.split(' & ')[0] || '');
         setSku(selected.sku || '');
+        if (selected.tailorName) {
+          setTailorName(selected.tailorName);
+        }
         
         // บันทึกรูปภาพแบบลงในรูปภาพสั่งตัดของออเดอร์ทันทีตามคำสั่งข้อ 1 ของผู้ใช้
         if (selected.image) {
@@ -313,6 +317,9 @@ export default function OrderForm({
         setDressType(matched.category === 'Abaya' ? 'อาบายะห์' : 'เดรสราตรี');
       }
       setFabricType(matched.fabricRecommend.split(' & ')[0] || '');
+      if (matched.tailorName) {
+        setTailorName(matched.tailorName);
+      }
       
       // บันทึกรูปภาพแบบลงในรูปภาพสั่งตัดของออเดอร์ทันทีตามคำสั่งข้อ 1 ของผู้ใช้
       if (matched.image) {
@@ -449,6 +456,7 @@ export default function OrderForm({
       branch: branch || staffBranch || 'สาขานราธิวาส',
       staffName: selectedStaffName || staffName || undefined,
       staffBranch: staffBranch || branch || undefined,
+      tailorName: tailorName.trim() || undefined,
       isMatchingSet: isMatchingSet || undefined,
       idhNumber: isMatchingSet ? (idhNumber.trim() || undefined) : undefined,
       pickupSignature: orderSignature || undefined,
@@ -469,6 +477,7 @@ export default function OrderForm({
       setMembershipTier('MEMBER');
       setExternalOrderId('');
       setBranch('สาขานราธิวาส');
+      setTailorName('');
       setIsMatchingSet(false);
       setIdhNumber('');
       handleClearSignature();
@@ -563,6 +572,7 @@ export default function OrderForm({
     setCustomerSocial("Line: massy_me");
     setCustomerCategory("IDD");
     setMembershipTier("PRIME");
+    setTailorName("ช่างฟาติมะห์");
     setFabricColor("Burgundy Deep Red");
     setChest("34");
     setWaist("26");
@@ -1027,11 +1037,11 @@ export default function OrderForm({
                   </datalist>
                 </div>
 
-                {/* อัปโหลดรูปภาพที่ลูกค้าจะสั่งตัด */}
-                <div className="pt-3 border-t border-natural-sand/55">
-                  <label className="block text-xs font-bold text-natural-espresso/80 mb-2 flex items-center space-x-1.5">
+                {/* แนบรูปภาพแบบชุดสั่งตัด */}
+                <div className="pt-3 border-t border-natural-sand/55 space-y-3">
+                  <label className="block text-xs font-bold text-natural-espresso/80 flex items-center space-x-1.5">
                     <ImageIcon className="h-3.5 w-3.5 text-natural-clay" />
-                    <span>แนบรูปภาพแบบชุดสั่งตัด (Design Reference Photos)</span>
+                    <span>ช่องอัปโหลดแบบชุดเพิ่มเติม (Design Upload)</span>
                   </label>
                   
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

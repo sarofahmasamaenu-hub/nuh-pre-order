@@ -806,11 +806,19 @@ export default function App() {
 
     const updated = orders.map(o => {
       if (o.id === orderId) {
-        const prevHistory = o.statusHistory || [];
+        let prevHistory = o.statusHistory && o.statusHistory.length > 0 ? [...o.statusHistory] : [];
+        if (prevHistory.length === 0) {
+          prevHistory = [{
+            status: o.status,
+            date: o.statusDate || o.orderDate,
+            note: o.notes || `สถานะเริ่มต้น: ${STATUS_MAP[o.status]?.label || o.status}`,
+            updatedBy: o.staffName || staffLabel
+          }];
+        }
         const newHistoryEntry = {
           status: nextStatus,
           date: todayStr,
-          note: note || statusLabel,
+          note: note || `เปลี่ยนสถานะเป็น: ${statusLabel}`,
           updatedBy: staffLabel
         };
         return { 
@@ -873,9 +881,23 @@ export default function App() {
   // แก้ไขรายละเอียดออเดอร์ทั้งหมด
   const handleUpdateOrder = (updatedOrder: Order) => {
     const existing = orders.find(o => o.id === updatedOrder.id);
-    let history = updatedOrder.statusHistory || existing?.statusHistory || [];
+    let history = updatedOrder.statusHistory && updatedOrder.statusHistory.length > 0
+      ? [...updatedOrder.statusHistory]
+      : existing?.statusHistory && existing.statusHistory.length > 0
+        ? [...existing.statusHistory]
+        : [];
     
-    // ถ้าสถานะเปลี่ยนแต่ยังไม่มีรายการบันทึกล่าสุดใน history ให้เพิ่มเข้าไป
+    // ถ้าประวัติยังว่างอยู่ ให้สร้าง entry แรกจากข้อมูลสถานะตั้งต้น
+    if (history.length === 0 && existing) {
+      history = [{
+        status: existing.status,
+        date: existing.statusDate || existing.orderDate,
+        note: existing.notes || `สถานะเริ่มต้น: ${STATUS_MAP[existing.status]?.label || existing.status}`,
+        updatedBy: existing.staffName || currentStaff?.name || 'พนักงาน'
+      }];
+    }
+
+    // ถ้าสถานะเปลี่ยน ให้เพิ่มประวัติสถานะใหม่ต่อท้ายเสมอ
     if (existing && existing.status !== updatedOrder.status) {
       const todayStr = updatedOrder.statusDate || new Date().toISOString().split('T')[0];
       const statusLabel = STATUS_MAP[updatedOrder.status]?.label || updatedOrder.status;
@@ -901,8 +923,25 @@ export default function App() {
 
   // บันทึกลายเซ็นลูกค้ารับมอบชุด และล็อกออเดอร์ถาวร
   const handleConfirmPickupSignature = (orderId: string, signatureDataUrl: string, signeeName: string, signedAt: string) => {
+    const todayStr = (signedAt && signedAt.split(' ')[0]) || new Date().toISOString().split('T')[0];
+    const staffLabel = currentStaff?.name || 'พนักงาน';
     const updated = orders.map(o => {
       if (o.id === orderId) {
+        let prevHistory = o.statusHistory && o.statusHistory.length > 0 ? [...o.statusHistory] : [];
+        if (prevHistory.length === 0) {
+          prevHistory = [{
+            status: o.status,
+            date: o.statusDate || o.orderDate,
+            note: o.notes || `สถานะเริ่มต้น: ${STATUS_MAP[o.status]?.label || o.status}`,
+            updatedBy: o.staffName || staffLabel
+          }];
+        }
+        const newHistoryEntry = {
+          status: OrderStatus.COMPLETED,
+          date: todayStr,
+          note: `ลูกค้ารับมอบชุดและลงลายเซ็น (${signeeName})`,
+          updatedBy: staffLabel
+        };
         return {
           ...o,
           pickupSignature: signatureDataUrl,
@@ -910,6 +949,8 @@ export default function App() {
           pickupSignedAt: signedAt,
           isLocked: true,
           status: OrderStatus.COMPLETED,
+          statusDate: todayStr,
+          statusHistory: o.status !== OrderStatus.COMPLETED ? [...prevHistory, newHistoryEntry] : prevHistory,
           updatedAt: Date.now()
         };
       }

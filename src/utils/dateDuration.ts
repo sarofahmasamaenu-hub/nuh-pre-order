@@ -57,3 +57,58 @@ export function formatStatusDurationTimeline(order: Order): string {
     return `[${entry.date}] ${statusLabel} (${durationText})`;
   }).join(' ➔ ');
 }
+
+/**
+ * สร้างข้อความระบุวันที่เปลี่ยนสถานะในทุกขั้นตอน
+ * ตัวอย่าง: 1. รับออร์เดอร์ (2026-08-01) | 2. ส่งช่างตัด (2026-08-03) | 3. ระหว่างการปัก (2026-08-07)
+ */
+export function formatAllStatusDatesLog(order: Order): string {
+  const history = order.statusHistory && order.statusHistory.length > 0
+    ? order.statusHistory
+    : [{
+        status: order.status,
+        date: order.statusDate || order.orderDate,
+        note: '',
+        updatedBy: order.staffName || ''
+      }];
+
+  return history.map((entry, idx) => {
+    const statusLabel = STATUS_MAP[entry.status as OrderStatus]?.label || entry.status;
+    return `${idx + 1}. ${statusLabel} (${entry.date})`;
+  }).join(' | ');
+}
+
+/**
+ * สร้างข้อความบันทึกประวัติการเปลี่ยนสถานะแบบละเอียดครบถ้วน (วันที่, สถานะ, ระยะเวลา, ผู้บันทึก, หมายเหตุ)
+ */
+export function formatFullStatusHistorySummary(order: Order): string {
+  const history = order.statusHistory && order.statusHistory.length > 0
+    ? order.statusHistory
+    : [{
+        status: order.status,
+        date: order.statusDate || order.orderDate,
+        note: '',
+        updatedBy: order.staffName || ''
+      }];
+
+  const todayStr = new Date().toISOString().split('T')[0];
+
+  return history.map((entry, idx) => {
+    const statusLabel = STATUS_MAP[entry.status as OrderStatus]?.label || entry.status;
+    const isLast = idx === history.length - 1;
+    const nextDate = isLast
+      ? (order.status === OrderStatus.COMPLETED ? (order.statusDate || entry.date) : todayStr)
+      : history[idx + 1].date;
+
+    const days = getDaysDifference(entry.date, nextDate);
+    const durationText = isLast
+      ? (order.status === OrderStatus.COMPLETED ? `จบงานใน ${days} วัน` : `สถานะปัจจุบัน (${days} วัน)`)
+      : `ใช้เวลา ${days} วัน`;
+
+    const notePart = entry.note ? ` [หมายเหตุ: ${entry.note}]` : '';
+    const staffPart = entry.updatedBy ? ` (โดย: ${entry.updatedBy})` : '';
+
+    return `[${idx + 1}] ${entry.date} (${statusLabel} - ${durationText}${staffPart}${notePart})`;
+  }).join(' ➔ ');
+}
+

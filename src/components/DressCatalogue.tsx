@@ -5,7 +5,7 @@
 
 import React, { useState, useRef } from 'react';
 import { CatalogueItem } from '../types';
-import { Search, Plus, Upload, X, Image, Sparkles, PlusCircle, Trash2, Pencil } from 'lucide-react';
+import { Search, Plus, Upload, X, Image, Sparkles, PlusCircle, Trash2, Pencil, Scissors, UserCheck } from 'lucide-react';
 import { compressImage } from '../utils/image';
 
 interface DressCatalogueProps {
@@ -38,6 +38,7 @@ export default function DressCatalogue({
   const [priceRange, setPriceRange] = useState('');
   const [fabricRecommend, setFabricRecommend] = useState('');
   const [description, setDescription] = useState('');
+  const [tailorName, setTailorName] = useState('');
   const [featuresInput, setFeaturesInput] = useState('');
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
@@ -136,6 +137,7 @@ export default function DressCatalogue({
     setPriceRange(item.priceRange.replace(' บาท', ''));
     setFabricRecommend(item.fabricRecommend);
     setDescription(item.description);
+    setTailorName(item.tailorName || '');
     setFeaturesInput(item.features.join(', '));
     setFormSizes(item.sizes || ['SS', 'S', 'M', 'L', 'XL']);
     
@@ -165,6 +167,7 @@ export default function DressCatalogue({
     setPriceRange('');
     setFabricRecommend('');
     setDescription('');
+    setTailorName('');
     setFeaturesInput('');
     setFormSizes(['SS', 'S', 'M', 'L', 'XL']);
     setSizePricesMap({
@@ -204,6 +207,7 @@ export default function DressCatalogue({
         sku: sku.trim() || undefined,
         name,
         description,
+        tailorName: tailorName.trim() || undefined,
         priceRange: priceRange.includes('บาท') ? priceRange : `${priceRange} บาท`,
         fabricRecommend,
         image: imagePreview || "https://images.unsplash.com/photo-1512436991641-6745cdb1723f?auto=format&fit=crop&q=80&w=600",
@@ -223,6 +227,7 @@ export default function DressCatalogue({
         sku: sku.trim() || undefined,
         name,
         description,
+        tailorName: tailorName.trim() || undefined,
         priceRange: priceRange.includes('บาท') ? priceRange : `${priceRange} บาท`,
         fabricRecommend,
         image: imagePreview || "https://images.unsplash.com/photo-1512436991641-6745cdb1723f?auto=format&fit=crop&q=80&w=600",
@@ -244,6 +249,7 @@ export default function DressCatalogue({
     setPriceRange('');
     setFabricRecommend('');
     setDescription('');
+    setTailorName('');
     setFeaturesInput('');
     setFormSizes(['SS', 'S', 'M', 'L', 'XL']);
     setSizePricesMap({
@@ -358,6 +364,14 @@ export default function DressCatalogue({
                       </span>
                     ))}
                   </div>
+
+                  {/* Tailor Badge if assigned */}
+                  {item.tailorName && (
+                    <div className="flex items-center gap-1.5 text-[11px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200/80 px-2.5 py-1 rounded-lg w-fit">
+                      <Scissors className="h-3.5 w-3.5 text-emerald-600" />
+                      <span>ช่างตัดเย็บประจำแบบ: {item.tailorName}</span>
+                    </div>
+                  )}
 
                   {/* Available Sizes list */}
                   <div className="flex flex-wrap items-center gap-1 pt-1">
@@ -527,6 +541,57 @@ export default function DressCatalogue({
                       onChange={(e) => setFabricRecommend(e.target.value)}
                       className="w-full px-3.5 py-2.5 rounded-xl border border-natural-wheat bg-white text-xs focus:outline-none focus:ring-1 focus:ring-natural-clay text-natural-espresso"
                     />
+                  </div>
+
+                  {/* ระบุชื่อช่างตัดเย็บ / ช่างแพทเทิร์นผู้ออกแบบ */}
+                  <div className="bg-emerald-50/70 border border-emerald-200/80 p-3.5 rounded-2xl space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="block text-xs font-bold text-emerald-950 flex items-center space-x-1.5">
+                        <Scissors className="h-3.5 w-3.5 text-emerald-700" />
+                        <span>ช่างตัดเย็บ / ช่างแพทเทิร์นผู้ออกแบบ (Tailor / Seamstress)</span>
+                      </label>
+                      <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-md border border-emerald-200">
+                        ช่างประจำแบบ
+                      </span>
+                    </div>
+                    <input 
+                      type="text"
+                      placeholder="ระบุชื่อช่าง เช่น ช่างฟาติมะห์, ช่างนูรูล, ช่างกัสมา"
+                      value={tailorName}
+                      onChange={(e) => setTailorName(e.target.value)}
+                      list="catalogue-tailor-suggestions"
+                      className="w-full px-3.5 py-2 rounded-xl border border-emerald-300 bg-white text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 text-emerald-950 font-bold placeholder:font-normal placeholder:text-stone-400 shadow-2xs"
+                    />
+                    <datalist id="catalogue-tailor-suggestions">
+                      <option value="ช่างฟาติมะห์" />
+                      <option value="ช่างนูรูล" />
+                      <option value="ช่างกัสมา" />
+                      <option value="ช่างมารียัม" />
+                      <option value="ช่างแว" />
+                      <option value="ช่างไซนะ" />
+                      <option value="ช่างอามีนะห์" />
+                      <option value="ช่างรอบีอะห์" />
+                      <option value="ช่างฮาซีนะห์" />
+                      <option value="ช่างโรฮานา" />
+                    </datalist>
+                    {/* Quick Select Tailor Pills */}
+                    <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                      <span className="text-[10px] text-emerald-800 font-semibold mr-1">เลือกด่วน:</span>
+                      {['ช่างฟาติมะห์', 'ช่างนูรูล', 'ช่างกัสมา', 'ช่างมารียัม', 'ช่างแว', 'ช่างไซนะ'].map((t) => (
+                        <button
+                          key={t}
+                          type="button"
+                          onClick={() => setTailorName(t)}
+                          className={`text-[10px] px-2 py-0.5 rounded-full border transition-all font-semibold cursor-pointer ${
+                            tailorName === t
+                              ? 'bg-emerald-700 text-white border-emerald-700 shadow-2xs'
+                              : 'bg-white text-emerald-900 border-emerald-200 hover:bg-emerald-100/60'
+                          }`}
+                        >
+                          ✂️ {t}
+                        </button>
+                      ))}
+                    </div>
                   </div>
 
                   <div>

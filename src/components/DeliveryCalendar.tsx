@@ -14,7 +14,8 @@ import {
   Phone, 
   Sparkles, 
   CheckCircle, 
-  AlertCircle 
+  AlertCircle,
+  Scissors
 } from 'lucide-react';
 
 interface DeliveryCalendarProps {
@@ -237,6 +238,11 @@ export default function DeliveryCalendar({ orders, onUpdateOrderStatus }: Delive
                       </p>
                       <p className="text-xs text-natural-espresso/80">
                         ชุด: <span className="font-semibold">{order.dressType}</span> | ผ้า: <span className="font-medium">{order.fabricType}</span>
+                        {order.tailorName && (
+                          <span className="ml-2 inline-flex items-center text-[10px] text-emerald-800 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200 font-bold">
+                            <Scissors className="h-2.5 w-2.5 mr-0.5" /> ช่าง: {order.tailorName}
+                          </span>
+                        )}
                       </p>
                       <p className="text-[11px] text-natural-clay font-medium">
                         📞 {order.customerPhone} | {order.notes || "ไม่มีบันทึกเพิ่มเติม"}
@@ -344,6 +350,11 @@ export default function DeliveryCalendar({ orders, onUpdateOrderStatus }: Delive
 
                     <p className="text-xs text-natural-espresso/70 leading-normal">
                       ชุด <span className="font-semibold text-natural-espresso/90">{order.dressType}</span> ({order.fabricType})
+                      {order.tailorName && (
+                        <span className="block text-[10px] text-emerald-800 font-bold mt-0.5">
+                          ✂️ ช่าง: {order.tailorName}
+                        </span>
+                      )}
                     </p>
 
                     <div className="flex items-center justify-between pt-1">
