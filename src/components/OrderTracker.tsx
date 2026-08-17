@@ -564,16 +564,18 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
 
   // การกรองข้อมูล
   const filteredOrders = orders.filter((order) => {
-    // กรองด้วยคำค้นหา (ชื่อ เบอร์ เลขที่ออเดอร์ ชื่อช่างตัดเย็บ หรือ SKU)
+    // กรองด้วยคำค้นหา (ชื่อ ชื่อเล่น เบอร์ เลขที่ออเดอร์ ชื่อช่างตัดเย็บ หรือ SKU)
+    const query = searchQuery.trim().toLowerCase();
     const matchesSearch = 
-      order.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      order.customerName.toLowerCase().includes(query) ||
+      (order.customerNickname && order.customerNickname.toLowerCase().includes(query)) ||
       order.customerPhone.includes(searchQuery) ||
-      order.orderNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      order.dressType.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (order.tailorName && order.tailorName.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (order.staffName && order.staffName.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (order.sku && order.sku.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (order.idhNumber && order.idhNumber.toLowerCase().includes(searchQuery.toLowerCase()));
+      order.orderNumber.toLowerCase().includes(query) ||
+      order.dressType.toLowerCase().includes(query) ||
+      (order.tailorName && order.tailorName.toLowerCase().includes(query)) ||
+      (order.staffName && order.staffName.toLowerCase().includes(query)) ||
+      (order.sku && order.sku.toLowerCase().includes(query)) ||
+      (order.idhNumber && order.idhNumber.toLowerCase().includes(query));
 
     // กรองด้วยสาขา
     const matchesBranch = branchFilter === 'ALL' || order.branch === branchFilter;
@@ -1411,7 +1413,7 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4.5 w-4.5 text-natural-espresso/40" />
           <input
             type="text"
-            placeholder="ค้นหาชื่อลูกค้า, เบอร์โทรศัพท์, หมายเลขสั่งซื้อ, ชื่อช่างตัดเย็บ, SKU..."
+            placeholder="ค้นหาชื่อลูกค้า, ชื่อเล่น/ชื่อเรียก, เบอร์โทรศัพท์, หมายเลขสั่งซื้อ, ชื่อช่างตัดเย็บ, SKU..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full text-sm pl-10 pr-4 py-2.5 rounded-xl border border-natural-wheat focus:outline-none focus:ring-2 focus:ring-natural-clay/20 focus:border-natural-clay bg-natural-cream/20"
@@ -1644,8 +1646,13 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
                         )}
                       </div>
                       <div className="flex items-center space-x-3">
-                        <h4 className="font-serif font-bold text-natural-espresso text-lg leading-tight">
-                          {order.customerName}
+                        <h4 className="font-serif font-bold text-natural-espresso text-lg leading-tight flex items-center flex-wrap gap-1.5">
+                          <span>{order.customerName}</span>
+                          {order.customerNickname && (
+                            <span className="text-xs sm:text-sm font-sans font-medium text-natural-espresso/70 bg-natural-sand/60 px-2 py-0.5 rounded-md border border-natural-wheat">
+                              ({order.customerNickname})
+                            </span>
+                          )}
                         </h4>
                         <p className="text-xs text-natural-espresso/60 flex items-center">
                           <Phone className="h-3 w-3 mr-1 inline" /> {order.customerPhone}
@@ -2085,6 +2092,12 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
                                 </div>
                               );
                             })()}
+                            {order.customerNickname && (
+                              <p className="flex items-center">
+                                <span className="font-semibold text-natural-espresso/60 mr-1.5">👤 ชื่อเล่น / ชื่อเรียก:</span>
+                                <span className="font-bold text-natural-espresso bg-natural-sand/40 border border-natural-wheat/60 px-2 py-0.5 rounded text-xs">{order.customerNickname}</span>
+                              </p>
+                            )}
                             {order.customerCategory && (
                               <p className="flex items-center">
                                 <span className="font-semibold text-natural-espresso/60 mr-1.5">🏷️ ประเภทงาน:</span>

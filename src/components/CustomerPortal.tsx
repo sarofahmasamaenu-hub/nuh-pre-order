@@ -379,6 +379,7 @@ export default function CustomerPortal({
       const cleanPhone = (order.customerPhone || '').replace(/[\s-()]/g, '');
       const orderNum = (order.orderNumber || '').toLowerCase();
       const customerName = (order.customerName || '').toLowerCase();
+      const customerNickname = (order.customerNickname || '').toLowerCase();
       const sku = (order.sku || '').toLowerCase();
 
       const matchesPhone = 
@@ -386,9 +387,10 @@ export default function CustomerPortal({
         (cleanQuery.length >= 3 && cleanPhone.includes(cleanQuery));
       const matchesOrderNum = orderNum.includes(query);
       const matchesName = customerName.includes(query);
+      const matchesNickname = customerNickname.includes(query);
       const matchesSku = sku.includes(query);
 
-      return matchesPhone || matchesOrderNum || matchesName || matchesSku;
+      return matchesPhone || matchesOrderNum || matchesName || matchesNickname || matchesSku;
     });
 
     if (matched.length > 0) {

@@ -240,8 +240,14 @@ export default function PrintOrderModal({ order, isOpen, onClose }: PrintOrderMo
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 py-4 border-b border-natural-sand text-xs">
                   <div className="space-y-1">
                     <p className="text-[10px] text-natural-espresso/45 font-bold uppercase">ข้อมูลผู้ชำระเงิน</p>
-                    <p className="font-bold text-natural-espresso flex items-center">
-                      <User className="h-3 w-3 mr-1 text-natural-clay/60" /> {order.customerName}
+                    <p className="font-bold text-natural-espresso flex items-center flex-wrap gap-1">
+                      <User className="h-3 w-3 mr-0.5 text-natural-clay/60 shrink-0" />
+                      <span>{order.customerName}</span>
+                      {order.customerNickname && (
+                        <span className="text-[11px] font-medium text-natural-espresso/70">
+                          ({order.customerNickname})
+                        </span>
+                      )}
                     </p>
                     <p className="text-natural-espresso/70 flex items-center">
                       <Phone className="h-3 w-3 mr-1 text-natural-clay/60" /> {order.customerPhone}
@@ -455,8 +461,14 @@ export default function PrintOrderModal({ order, isOpen, onClose }: PrintOrderMo
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 py-5 border-b border-natural-sand text-xs">
                   <div className="space-y-1">
                     <p className="text-[10px] text-natural-espresso/45 font-bold uppercase">ข้อมูลผู้สั่งซื้อ</p>
-                    <p className="font-bold text-natural-espresso flex items-center">
-                      <User className="h-3 w-3 mr-1 text-natural-clay/60" /> {order.customerName}
+                    <p className="font-bold text-natural-espresso flex items-center flex-wrap gap-1">
+                      <User className="h-3 w-3 mr-0.5 text-natural-clay/60 shrink-0" />
+                      <span>{order.customerName}</span>
+                      {order.customerNickname && (
+                        <span className="text-[11px] font-medium text-natural-espresso/70">
+                          ({order.customerNickname})
+                        </span>
+                      )}
                     </p>
                     <p className="text-natural-espresso/70 flex items-center">
                       <Phone className="h-3 w-3 mr-1 text-natural-clay/60" /> {order.customerPhone}

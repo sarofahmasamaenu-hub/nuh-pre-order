@@ -34,6 +34,7 @@ export default function OrderForm({
   // ฟอร์มแบ่งออกเป็น 4 ส่วนหลักเพื่อความเป็นระเบียบเรียบร้อย (Bento layout)
   const [selectedStaffName, setSelectedStaffName] = useState(staffName || activeStaffList[0]?.name || '');
   const [customerName, setCustomerName] = useState('');
+  const [customerNickname, setCustomerNickname] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerSocial, setCustomerSocial] = useState('');
   const [lineUserId, setLineUserId] = useState('');
@@ -214,7 +215,7 @@ export default function OrderForm({
   const getPastCustomerOrders = () => {
     if (!orders || orders.length === 0) return [];
     const cleanInputPhone = customerPhone.replace(/[\s-()]/g, '');
-    if (!cleanInputPhone && !customerName.trim()) return [];
+    if (!cleanInputPhone && !customerName.trim() && !customerNickname.trim()) return [];
 
     return orders.filter(o => {
       if (cleanInputPhone) {
@@ -222,7 +223,14 @@ export default function OrderForm({
         return cleanOrderPhone === cleanInputPhone;
       }
       if (customerName.trim()) {
-        return o.customerName.toLowerCase().includes(customerName.trim().toLowerCase());
+        const query = customerName.trim().toLowerCase();
+        return o.customerName.toLowerCase().includes(query) ||
+          (o.customerNickname && o.customerNickname.toLowerCase().includes(query));
+      }
+      if (customerNickname.trim()) {
+        const query = customerNickname.trim().toLowerCase();
+        return (o.customerNickname && o.customerNickname.toLowerCase().includes(query)) ||
+          o.customerName.toLowerCase().includes(query);
       }
       return false;
     });
@@ -253,6 +261,7 @@ export default function OrderForm({
     }
     // ดึงข้อมูลอื่นเพิ่มเติมหากว่างอยู่
     if (!customerSocial && pastOrder.customerSocial) setCustomerSocial(pastOrder.customerSocial);
+    if (!customerNickname && pastOrder.customerNickname) setCustomerNickname(pastOrder.customerNickname);
     if (!lineUserId && pastOrder.lineUserId) setLineUserId(pastOrder.lineUserId);
     if (pastOrder.customerCategory) setCustomerCategory(pastOrder.customerCategory);
     if (pastOrder.membershipTier) setMembershipTier(pastOrder.membershipTier);
@@ -410,6 +419,7 @@ export default function OrderForm({
       id: `order-${Date.now()}`,
       orderNumber: nextOrderNumber,
       customerName,
+      customerNickname: customerNickname.trim() || undefined,
       customerPhone,
       customerSocial: customerSocial || undefined,
       lineUserId: lineUserId || undefined,
@@ -471,6 +481,7 @@ export default function OrderForm({
     setTimeout(() => {
       setIsSuccess(false);
       setCustomerName('');
+      setCustomerNickname('');
       setCustomerPhone('');
       setCustomerSocial('');
       setCustomerCategory('IDD');
@@ -687,17 +698,29 @@ export default function OrderForm({
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-medium text-natural-espresso/70 mb-1">ชื่อลูกค้า <span className="text-natural-clay">*</span></label>
-                  <input
-                    type="text"
-                    required
-                    value={customerName}
-                    onChange={(e) => setCustomerName(e.target.value)}
-                    placeholder="เช่น คุณอาลีญา มะหมัด"
-                    className="w-full text-sm px-3 py-2 rounded-xl border border-natural-wheat focus:outline-none focus:ring-2 focus:ring-natural-clay/20 focus:border-natural-clay bg-natural-cream/20"
-                  />
-                  {errors.customerName && <p className="text-xs text-rose-500 mt-1">{errors.customerName}</p>}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-natural-espresso/70 mb-1">ชื่อลูกค้า-นามสกุล <span className="text-natural-clay">*</span></label>
+                    <input
+                      type="text"
+                      required
+                      value={customerName}
+                      onChange={(e) => setCustomerName(e.target.value)}
+                      placeholder="เช่น คุณอาลีญา มะหมัด"
+                      className="w-full text-sm px-3 py-2 rounded-xl border border-natural-wheat focus:outline-none focus:ring-2 focus:ring-natural-clay/20 focus:border-natural-clay bg-natural-cream/20"
+                    />
+                    {errors.customerName && <p className="text-xs text-rose-500 mt-1">{errors.customerName}</p>}
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-natural-espresso/70 mb-1">ชื่อเล่น / ชื่อเรียก (เช่น กัส, มะห์)</label>
+                    <input
+                      type="text"
+                      value={customerNickname}
+                      onChange={(e) => setCustomerNickname(e.target.value)}
+                      placeholder="เช่น กัส, มะห์, โบว์"
+                      className="w-full text-sm px-3 py-2 rounded-xl border border-natural-wheat focus:outline-none focus:ring-2 focus:ring-natural-clay/20 focus:border-natural-clay bg-natural-cream/20"
+                    />
+                  </div>
                 </div>
                 
                 <div className="grid grid-cols-2 gap-3">
@@ -793,19 +816,6 @@ export default function OrderForm({
                     />
                     <span className="text-xs font-bold text-natural-espresso">เป็นงานเข้าชุด (Matching Set)</span>
                   </label>
-                  
-                  {isMatchingSet && (
-                    <div className="mt-2 pl-7 animate-fade-in">
-                      <label className="block text-[11px] font-bold text-natural-clay mb-1">เลข IDH สำหรับงานเข้าชุด (IDH Number)</label>
-                      <input
-                        type="text"
-                        value={idhNumber}
-                        onChange={(e) => setIdhNumber(e.target.value)}
-                        placeholder="ระบุเลข IDH เช่น IDH-88, IDH-102"
-                        className="w-full max-w-xs text-xs px-3 py-2 rounded-lg border border-natural-wheat focus:outline-none focus:ring-2 focus:ring-natural-clay/20 focus:border-natural-clay bg-amber-50/20 font-bold text-natural-espresso placeholder-natural-espresso/40"
-                      />
-                    </div>
-                  )}
                 </div>
 
                 {/* ประเภทบัตรสมาชิก */}

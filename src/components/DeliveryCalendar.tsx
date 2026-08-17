@@ -204,7 +204,7 @@ export default function DeliveryCalendar({ orders, onUpdateOrderStatus }: Delive
                               : 'bg-natural-sand border border-natural-wheat/40 text-natural-espresso/90'
                         }`}
                       >
-                        {order.customerName.replace("คุณ", "")}
+                        {order.customerNickname ? `${order.customerNickname} (${order.customerName.replace("คุณ", "").trim()})` : order.customerName.replace("คุณ", "")}
                       </div>
                     );
                   })}
@@ -233,8 +233,14 @@ export default function DeliveryCalendar({ orders, onUpdateOrderStatus }: Delive
                 return (
                   <div key={order.id} className="py-2.5 flex justify-between items-center first:pt-0 last:pb-0">
                     <div>
-                      <p className="text-sm font-bold text-natural-espresso">
-                        {order.customerName} ({order.orderNumber})
+                      <p className="text-sm font-bold text-natural-espresso flex items-center flex-wrap gap-1.5">
+                        <span>{order.customerName}</span>
+                        {order.customerNickname && (
+                          <span className="text-xs font-medium text-natural-espresso/70 bg-white/70 px-1.5 py-0.2 rounded border border-natural-wheat">
+                            ({order.customerNickname})
+                          </span>
+                        )}
+                        <span className="text-xs text-natural-espresso/50">({order.orderNumber})</span>
                       </p>
                       <p className="text-xs text-natural-espresso/80">
                         ชุด: <span className="font-semibold">{order.dressType}</span> | ผ้า: <span className="font-medium">{order.fabricType}</span>

@@ -49,6 +49,7 @@ interface CustomerDashboardProps {
 
 interface CustomerProfile {
   name: string;
+  nickname?: string;
   phone: string;
   social?: string;
   categories: string[];      // ['IDD', 'IDH'] etc.
@@ -136,6 +137,7 @@ export default function CustomerDashboard({
       if (!profilesMap[normalizedKey]) {
         profilesMap[normalizedKey] = {
           name: order.customerName, // Default to original name
+          nickname: order.customerNickname,
           phone: (order.customerPhone || '').trim(),
           social: (order.customerSocial || '').trim(),
           categories: [orderCategory],
@@ -179,11 +181,17 @@ export default function CustomerDashboard({
       }
 
       // Keep latest category and membership tier (based on latest order date)
+      if (order.customerNickname && !profile.nickname) {
+        profile.nickname = order.customerNickname;
+      }
       if (new Date(order.orderDate) >= new Date(profile.latestOrderDate)) {
         profile.latestOrderDate = order.orderDate;
         profile.latestCategory = orderCategory;
         // Keep the latest name representation if it doesn't have "คุณ" prefix, or is simply newer
         profile.name = order.customerName;
+        if (order.customerNickname) {
+          profile.nickname = order.customerNickname;
+        }
         if (order.membershipTier) {
           profile.membershipTier = order.membershipTier;
         }
@@ -261,11 +269,13 @@ export default function CustomerDashboard({
   const filteredAndSortedCustomers = useMemo(() => {
     return customerProfiles
       .filter(profile => {
-        // Search query filter (matches name, phone, social)
+        // Search query filter (matches name, nickname, phone, social)
+        const query = searchQuery.trim().toLowerCase();
         const matchSearch = 
-          profile.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          profile.name.toLowerCase().includes(query) ||
+          (profile.nickname && profile.nickname.toLowerCase().includes(query)) ||
           profile.phone.includes(searchQuery) ||
-          (profile.social && profile.social.toLowerCase().includes(searchQuery.toLowerCase()));
+          (profile.social && profile.social.toLowerCase().includes(query));
 
         // Category filter
         const matchCategory = 
@@ -451,7 +461,7 @@ export default function CustomerDashboard({
           </div>
           <input
             type="text"
-            placeholder="ค้นหาชื่อลูกค้า, เบอร์โทรศัพท์ หรือ LINE/Social..."
+            placeholder="ค้นหาชื่อลูกค้า, ชื่อเล่น/ชื่อเรียก, เบอร์โทรศัพท์ หรือ LINE/Social..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full bg-stone-50/70 border border-natural-wheat/70 rounded-xl pl-9.5 pr-4 py-2.5 text-xs text-natural-espresso placeholder:text-natural-espresso/45 focus:outline-none focus:ring-1 focus:ring-natural-clay focus:bg-white transition-all font-medium"
@@ -579,8 +589,13 @@ export default function CustomerDashboard({
                       
                       {/* Name / Phone */}
                       <div className="min-w-0">
-                        <h4 className="font-serif font-black text-sm text-natural-espresso truncate">
-                          {profile.name}
+                        <h4 className="font-serif font-black text-sm text-natural-espresso truncate flex items-center gap-1.5">
+                          <span>{profile.name}</span>
+                          {profile.nickname && (
+                            <span className="text-[11px] font-sans font-medium text-natural-espresso/70 bg-stone-100 px-1.5 py-0.2 rounded border border-natural-wheat/60">
+                              ({profile.nickname})
+                            </span>
+                          )}
                         </h4>
                         <div className="flex items-center space-x-1.5 text-[11px] text-natural-espresso/60 mt-0.5">
                           <Phone className="h-3 w-3 text-natural-espresso/40" />
@@ -733,7 +748,7 @@ export default function CustomerDashboard({
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <h3 className="font-serif font-black text-base text-natural-espresso truncate">
-                        ประวัติการสั่งตัดเสื้อผ้าของคุณ {selectedCustomer.name.replace('คุณ', '').trim()}
+                        ประวัติการสั่งตัดเสื้อผ้าของคุณ {selectedCustomer.name.replace('คุณ', '').trim()} {selectedCustomer.nickname ? `(${selectedCustomer.nickname})` : ''}
                       </h3>
 
                       {/* Photo Action Buttons */}

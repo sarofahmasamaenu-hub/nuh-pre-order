@@ -97,6 +97,7 @@ export interface Order {
   id: string;
   orderNumber: string;
   customerName: string;
+  customerNickname?: string; // ชื่อเล่น หรือ ชื่อเรียกของลูกค้า (Nickname)
   customerPhone: string;
   customerSocial?: string;    // IG, Line, FB
   dressType: string;         // เดรสราตรี, อาบายะห์, จั๊มสูท, ชุดทำงาน, เดรสสั้น, อื่นๆ
