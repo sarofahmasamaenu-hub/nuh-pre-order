@@ -14,6 +14,7 @@ export default function PrintOrderModal({ order, isOpen, onClose }: PrintOrderMo
   if (!isOpen || !order) return null;
 
   const boutiquePhone = localStorage.getItem('nunuh_boutique_phone') || '086-555-1234';
+  const boutiqueLogo = localStorage.getItem('nunuh_boutique_logo') || '';
   const [documentType, setDocumentType] = useState<'order' | 'receipt'>('order');
   const [receiptPaymentType, setReceiptPaymentType] = useState<'deposit' | 'full'>(
     order.deposit > 0 && Math.max(0, order.price - order.deposit - (order.discount || 0)) > 0 ? 'deposit' : 'full'
@@ -213,15 +214,24 @@ export default function PrintOrderModal({ order, isOpen, onClose }: PrintOrderMo
               <div className="space-y-6">
                 {/* Header Shop Section */}
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-natural-wheat/80 pb-6 gap-4">
-                  <div className="space-y-1.5">
-                    <div className="flex items-center space-x-2">
-                      <span className="font-serif font-extrabold text-2xl tracking-widest text-natural-espresso">NUNUH</span>
-                      <span className="text-xs bg-natural-clay/10 text-natural-clay px-2 py-0.5 rounded font-bold uppercase tracking-wider font-serif">Couture</span>
+                  <div className="flex items-center space-x-3.5">
+                    {boutiqueLogo && (
+                      <img 
+                        src={boutiqueLogo} 
+                        alt="Company Logo" 
+                        className="h-12 w-12 object-contain rounded-xl border border-natural-wheat bg-white p-0.5" 
+                      />
+                    )}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center space-x-2">
+                        <span className="font-serif font-extrabold text-2xl tracking-widest text-natural-espresso">NUNUH</span>
+                        <span className="text-xs bg-natural-clay/10 text-natural-clay px-2 py-0.5 rounded font-bold uppercase tracking-wider font-serif">Couture</span>
+                      </div>
+                      <p className="text-[10px] text-natural-espresso/60 leading-relaxed font-sans max-w-sm">
+                        NUNUN INTERNATIONAL <br />
+                        โทร: {boutiquePhone} | LINE: @237aynfq
+                      </p>
                     </div>
-                    <p className="text-[10px] text-natural-espresso/60 leading-relaxed font-sans max-w-sm">
-                      NUNUN INTERNATIONAL <br />
-                      โทร: {boutiquePhone} | LINE: @237aynfq
-                    </p>
                   </div>
                   <div className="text-left sm:text-right space-y-1">
                     <h2 className="font-serif font-bold text-xl text-natural-clay uppercase tracking-wider">
@@ -436,15 +446,24 @@ export default function PrintOrderModal({ order, isOpen, onClose }: PrintOrderMo
               <>
                 {/* Header Shop Section */}
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-natural-wheat/80 pb-6 gap-4">
-                  <div className="space-y-1.5">
-                    <div className="flex items-center space-x-2">
-                      <span className="font-serif font-extrabold text-2xl tracking-widest text-natural-espresso">NUNUH</span>
-                      <span className="text-xs bg-natural-clay/10 text-natural-clay px-2 py-0.5 rounded font-bold uppercase tracking-wider font-serif">Couture</span>
+                  <div className="flex items-center space-x-3.5">
+                    {boutiqueLogo && (
+                      <img 
+                        src={boutiqueLogo} 
+                        alt="Company Logo" 
+                        className="h-12 w-12 object-contain rounded-xl border border-natural-wheat bg-white p-0.5" 
+                      />
+                    )}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center space-x-2">
+                        <span className="font-serif font-extrabold text-2xl tracking-widest text-natural-espresso">NUNUH</span>
+                        <span className="text-xs bg-natural-clay/10 text-natural-clay px-2 py-0.5 rounded font-bold uppercase tracking-wider font-serif">Couture</span>
+                      </div>
+                      <p className="text-[10px] text-natural-espresso/60 leading-relaxed font-sans max-w-sm">
+                        NUNUN INTERNATIONAL <br />
+                        โทร: {boutiquePhone} | LINE: @237aynfq
+                      </p>
                     </div>
-                    <p className="text-[10px] text-natural-espresso/60 leading-relaxed font-sans max-w-sm">
-                      NUNUN INTERNATIONAL <br />
-                      โทร: {boutiquePhone} | LINE: @237aynfq
-                    </p>
                   </div>
                   <div className="text-left sm:text-right space-y-1">
                     <h2 className="font-serif font-bold text-xl text-natural-clay uppercase tracking-wider">ใบสั่งตัดชุดและวัดตัว</h2>

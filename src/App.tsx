@@ -37,7 +37,12 @@ import {
   VolumeX,
   Bell,
   AlertTriangle,
-  Send
+  Send,
+  Upload,
+  Image as ImageIcon,
+  Trash2,
+  Camera,
+  Check
 } from 'lucide-react';
 
 export default function App() {
@@ -206,6 +211,10 @@ export default function App() {
     return localStorage.getItem('nunuh_boutique_phone') || '086-555-1234';
   });
 
+  const [boutiqueLogo, setBoutiqueLogo] = useState<string>(() => {
+    return localStorage.getItem('nunuh_boutique_logo') || '';
+  });
+
   const handleUpdateBoutiquePhone = async (newPhone: string) => {
     setBoutiquePhone(newPhone);
     localStorage.setItem('nunuh_boutique_phone', newPhone);
@@ -218,6 +227,69 @@ export default function App() {
     } catch (e) {
       console.warn('Failed to sync boutique phone with server:', e);
     }
+  };
+
+  const handleUpdateBoutiqueLogo = async (newLogo: string) => {
+    setBoutiqueLogo(newLogo);
+    localStorage.setItem('nunuh_boutique_logo', newLogo);
+    try {
+      await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ boutiqueLogo: newLogo })
+      });
+    } catch (e) {
+      console.warn('Failed to sync boutique logo with server:', e);
+    }
+  };
+
+  const handleLogoFileUpload = (file: File) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      alert('กรุณาเลือกไฟล์รูปภาพ (PNG, JPG, WebP, SVG) สำหรับโลโก้ค่ะ');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (readerEvent) => {
+      const rawDataUrl = readerEvent.target?.result as string;
+      if (!rawDataUrl) return;
+
+      if (file.type === 'image/svg+xml') {
+        handleUpdateBoutiqueLogo(rawDataUrl);
+        return;
+      }
+
+      // Resize / compress logo to keep state lightweight (<400px)
+      const img = new Image();
+      img.onload = () => {
+        const maxDim = 400;
+        let width = img.width;
+        let height = img.height;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressedDataUrl = canvas.toDataURL('image/png', 0.9);
+          handleUpdateBoutiqueLogo(compressedDataUrl);
+        } else {
+          handleUpdateBoutiqueLogo(rawDataUrl);
+        }
+      };
+      img.src = rawDataUrl;
+    };
+    reader.readAsDataURL(file);
   };
 
   // Save selected theme to localStorage when changed
@@ -335,6 +407,10 @@ export default function App() {
             setBoutiquePhone(serverSettings.boutiquePhone);
             localStorage.setItem('nunuh_boutique_phone', serverSettings.boutiquePhone);
           }
+          if (serverSettings.boutiqueLogo !== undefined) {
+            setBoutiqueLogo(serverSettings.boutiqueLogo);
+            localStorage.setItem('nunuh_boutique_logo', serverSettings.boutiqueLogo);
+          }
           if (serverSettings.theme) {
             setTheme(serverSettings.theme);
             localStorage.setItem('nunuh_selected_theme', serverSettings.theme);
@@ -351,6 +427,7 @@ export default function App() {
         } else {
           // If server is empty, upload local settings
           const localPhone = localStorage.getItem('nunuh_boutique_phone') || '086-555-1234';
+          const localLogo = localStorage.getItem('nunuh_boutique_logo') || '';
           const localTheme = localStorage.getItem('nunuh_selected_theme') || 'pink';
           const localLineOaId = localStorage.getItem('nunuh_line_oa_id') || '@237aynfq';
           const localLineOaChatUrl = localStorage.getItem('nunuh_line_oa_chat_url') || 'https://chat.line.biz/';
@@ -361,6 +438,7 @@ export default function App() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               boutiquePhone: localPhone,
+              boutiqueLogo: localLogo,
               theme: localTheme,
               lineOaId: localLineOaId,
               lineOaChatUrl: localLineOaChatUrl,
@@ -584,6 +662,10 @@ export default function App() {
               if (payload.data.boutiquePhone) {
                 setBoutiquePhone(payload.data.boutiquePhone);
                 localStorage.setItem('nunuh_boutique_phone', payload.data.boutiquePhone);
+              }
+              if (payload.data.boutiqueLogo !== undefined) {
+                setBoutiqueLogo(payload.data.boutiqueLogo);
+                localStorage.setItem('nunuh_boutique_logo', payload.data.boutiqueLogo);
               }
               if (payload.data.theme) {
                 setTheme(payload.data.theme);
@@ -1122,11 +1204,35 @@ export default function App() {
                   handleGoHome();
                 }
               }}
-              className={`flex items-center space-x-3.5 ${isStaffMode ? 'cursor-default' : 'cursor-pointer'} group transition-all`}
+              className={`flex items-center space-x-3.5 ${isStaffMode ? 'cursor-default' : 'cursor-pointer'} group transition-all relative`}
               title={isStaffMode ? "NUNUH Staff Workspace (พนักงานรับออเดอร์)" : "คลิกเพื่อกลับสู่หน้าแรกระบบห้องเสื้อ NUNUH"}
             >
-              <div className="h-11 w-11 rounded-2xl bg-natural-espresso group-hover:bg-natural-clay transition-colors flex items-center justify-center text-natural-cream shadow-sm">
-                <Store className="h-5 w-5 text-natural-ochre" />
+              <div className="relative group/logo">
+                <div className="h-11 w-11 rounded-2xl bg-natural-espresso group-hover:bg-natural-clay transition-colors flex items-center justify-center text-natural-cream shadow-sm overflow-hidden p-0.5 border border-natural-wheat/40">
+                  {boutiqueLogo ? (
+                    <img 
+                      src={boutiqueLogo} 
+                      alt="Company Logo" 
+                      className="h-full w-full object-contain rounded-xl bg-white" 
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <Store className="h-5 w-5 text-natural-ochre" />
+                  )}
+                </div>
+                {!isCustomerMode && !isStaffMode && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsSettingsOpen(true);
+                    }}
+                    title="เปลี่ยนโลโก้บริษัท / ห้องเสื้อ"
+                    className="absolute -bottom-1 -right-1 h-5 w-5 rounded-full bg-natural-clay text-white flex items-center justify-center shadow-xs opacity-0 group-hover/logo:opacity-100 transition-all hover:scale-110 cursor-pointer"
+                  >
+                    <Camera className="h-2.5 w-2.5" />
+                  </button>
+                )}
               </div>
               <div>
                 <h1 className="text-2xl font-serif font-black tracking-widest text-natural-espresso group-hover:text-natural-clay transition-colors uppercase">
@@ -1144,7 +1250,10 @@ export default function App() {
 
             {/* Top Workspace Tab Navs */}
             {!isCustomerMode ? (
-              <nav className="flex items-center space-x-1 bg-natural-sand/50 p-1.5 rounded-2xl border border-natural-wheat/40">
+              <nav 
+                style={{ width: '610px', height: '79px' }}
+                className="flex items-center justify-center space-x-1 bg-natural-sand/50 p-1.5 rounded-2xl border border-natural-wheat/40"
+              >
                   <button
                     onClick={() => setActiveTab('tracker')}
                     className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold tracking-wide transition-all cursor-pointer ${
@@ -1754,6 +1863,62 @@ export default function App() {
                     <p className="text-[10px] text-natural-espresso/45 mt-1 leading-relaxed">
                       * เบอร์โทรศัพท์นี้จะถูกนำไปใช้อัปเดตข้อมูลการติดต่อในใบเสร็จรับเงิน, เอกสารพิมพ์ใบออเดอร์ และปุ่มสำหรับลูกค้าเพื่อ "โทรติดต่อห้องเสื้อ" อัตโนมัติ
                     </p>
+                  </div>
+
+                  {/* Company Logo Setting */}
+                  <div className="pt-3 border-t border-natural-wheat/50 space-y-2">
+                    <label className="block text-xs font-bold text-natural-espresso/80 flex items-center justify-between">
+                      <span className="flex items-center space-x-1.5">
+                        <ImageIcon className="h-3.5 w-3.5 text-natural-clay" />
+                        <span>โลโก้บริษัท / โลโก้ห้องเสื้อ (Company Logo)</span>
+                      </span>
+                      {boutiqueLogo && (
+                        <button
+                          type="button"
+                          onClick={() => handleUpdateBoutiqueLogo('')}
+                          className="text-[11px] text-rose-600 hover:text-rose-700 font-bold flex items-center gap-1 cursor-pointer"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                          <span>ลบโลโก้ / คืนค่าเริ่มต้น</span>
+                        </button>
+                      )}
+                    </label>
+
+                    <div className="flex items-center gap-3 bg-natural-sand/20 p-3 rounded-2xl border border-natural-wheat/60">
+                      <div className="h-14 w-14 rounded-2xl bg-white border border-natural-wheat/80 flex items-center justify-center p-1 shadow-2xs overflow-hidden shrink-0">
+                        {boutiqueLogo ? (
+                          <img
+                            src={boutiqueLogo}
+                            alt="Company Logo Preview"
+                            className="h-full w-full object-contain"
+                            referrerPolicy="no-referrer"
+                          />
+                        ) : (
+                          <div className="flex flex-col items-center justify-center text-natural-espresso/30 text-center">
+                            <Store className="h-6 w-6 text-natural-ochre" />
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex-1 space-y-1.5">
+                        <label className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-natural-espresso hover:bg-natural-clay text-white text-xs font-bold rounded-xl cursor-pointer transition-all shadow-2xs">
+                          <Upload className="h-3.5 w-3.5 text-natural-ochre" />
+                          <span>อัปโหลดรูปภาพโลโก้</span>
+                          <input
+                            type="file"
+                            accept="image/png, image/jpeg, image/webp, image/svg+xml"
+                            className="hidden"
+                            onChange={(e) => {
+                              const f = e.target.files?.[0];
+                              if (f) handleLogoFileUpload(f);
+                            }}
+                          />
+                        </label>
+                        <p className="text-[10px] text-natural-espresso/50 leading-tight">
+                          รองรับไฟล์ PNG (พื้นหลังโปร่งใส), JPG, SVG, WebP ระบบจะปรับขนาดและแสดงผลทันที
+                        </p>
+                      </div>
+                    </div>
                   </div>
 
                   {/* Sound Notification Setting */}
