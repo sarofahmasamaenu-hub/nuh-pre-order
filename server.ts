@@ -4,6 +4,21 @@ import fs from "fs";
 import crypto from "crypto";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
+import {
+  initDb,
+  isPostgresActive,
+  getOrdersFromDb,
+  saveOrderToDb,
+  saveMultipleOrdersToDb,
+  deleteOrderInDb,
+  getDeletedOrderIdsFromDb,
+  getCatalogueFromDb,
+  saveCatalogueToDb,
+  getSettingsFromDb,
+  saveSettingsToDb,
+  getReviewsFromDb,
+  saveReviewsToDb
+} from "./db";
 
 dotenv.config();
 
@@ -25,108 +40,204 @@ const SETTINGS_FILE = path.join(process.cwd(), 'settings.json');
 const REVIEWS_FILE = path.join(process.cwd(), 'reviews.json');
 let lastKnownPublicUrl = "";
 
-// Helper to read orders from file safely
-function readOrdersOnServer() {
+// Helper to read orders from PostgreSQL with fallback to file
+async function readOrdersOnServer(): Promise<any[]> {
+  if (isPostgresActive()) {
+    try {
+      const dbOrders = await getOrdersFromDb();
+      if (dbOrders && dbOrders.length > 0) {
+        return dbOrders;
+      }
+    } catch (e) {
+      console.error("Error reading orders from DB:", e);
+    }
+  }
+
+  // Fallback to local file
   try {
     if (fs.existsSync(ORDERS_FILE)) {
       const data = fs.readFileSync(ORDERS_FILE, 'utf8');
       return JSON.parse(data);
     }
   } catch (err) {
-    console.error("Error reading orders:", err);
+    console.error("Error reading orders from file:", err);
   }
   return [];
 }
 
-// Helper to write orders to file safely
-function writeOrdersOnServer(orders: any[]) {
+// Helper to write orders to PostgreSQL and file safely
+async function writeOrdersOnServer(orders: any[]) {
+  if (isPostgresActive()) {
+    try {
+      await saveMultipleOrdersToDb(orders);
+    } catch (e) {
+      console.error("Error writing orders to DB:", e);
+    }
+  }
+
   try {
     fs.writeFileSync(ORDERS_FILE, JSON.stringify(orders, null, 2), 'utf8');
   } catch (err) {
-    console.error("Error writing orders:", err);
+    console.error("Error writing orders to file:", err);
   }
 }
 
 // Helper to read deleted order IDs
-function readDeletedOrdersOnServer(): string[] {
+async function readDeletedOrdersOnServer(): Promise<string[]> {
+  if (isPostgresActive()) {
+    try {
+      const dbDeleted = await getDeletedOrderIdsFromDb();
+      if (dbDeleted && dbDeleted.length > 0) {
+        return dbDeleted;
+      }
+    } catch (e) {
+      console.error("Error reading deleted orders from DB:", e);
+    }
+  }
+
   try {
     if (fs.existsSync(DELETED_ORDERS_FILE)) {
       const data = fs.readFileSync(DELETED_ORDERS_FILE, 'utf8');
       return JSON.parse(data);
     }
   } catch (err) {
-    console.error("Error reading deleted orders:", err);
+    console.error("Error reading deleted orders from file:", err);
   }
   return [];
 }
 
 // Helper to write deleted order IDs
-function writeDeletedOrdersOnServer(ids: string[]) {
+async function writeDeletedOrdersOnServer(ids: string[], newDeletedId?: string) {
+  if (isPostgresActive() && newDeletedId) {
+    try {
+      await deleteOrderInDb(newDeletedId);
+    } catch (e) {
+      console.error("Error deleting order in DB:", e);
+    }
+  }
+
   try {
     fs.writeFileSync(DELETED_ORDERS_FILE, JSON.stringify(ids, null, 2), 'utf8');
   } catch (err) {
-    console.error("Error writing deleted orders:", err);
+    console.error("Error writing deleted orders to file:", err);
   }
 }
 
 // Helpers for catalogue, settings, and reviews
-function readCatalogueOnServer() {
+async function readCatalogueOnServer(): Promise<any[]> {
+  if (isPostgresActive()) {
+    try {
+      const dbCat = await getCatalogueFromDb();
+      if (dbCat && dbCat.length > 0) {
+        return dbCat;
+      }
+    } catch (e) {
+      console.error("Error reading catalogue from DB:", e);
+    }
+  }
+
   try {
     if (fs.existsSync(CATALOGUE_FILE)) {
       const data = fs.readFileSync(CATALOGUE_FILE, 'utf8');
       return JSON.parse(data);
     }
   } catch (err) {
-    console.error("Error reading catalogue:", err);
+    console.error("Error reading catalogue from file:", err);
   }
   return [];
 }
 
-function writeCatalogueOnServer(data: any[]) {
+async function writeCatalogueOnServer(data: any[]) {
+  if (isPostgresActive()) {
+    try {
+      await saveCatalogueToDb(data);
+    } catch (e) {
+      console.error("Error writing catalogue to DB:", e);
+    }
+  }
+
   try {
     fs.writeFileSync(CATALOGUE_FILE, JSON.stringify(data, null, 2), 'utf8');
   } catch (err) {
-    console.error("Error writing catalogue:", err);
+    console.error("Error writing catalogue to file:", err);
   }
 }
 
-function readSettingsOnServer() {
+async function readSettingsOnServer(): Promise<any> {
+  if (isPostgresActive()) {
+    try {
+      const dbSettings = await getSettingsFromDb();
+      if (dbSettings && Object.keys(dbSettings).length > 0) {
+        return dbSettings;
+      }
+    } catch (e) {
+      console.error("Error reading settings from DB:", e);
+    }
+  }
+
   try {
     if (fs.existsSync(SETTINGS_FILE)) {
       const data = fs.readFileSync(SETTINGS_FILE, 'utf8');
       return JSON.parse(data);
     }
   } catch (err) {
-    console.error("Error reading settings:", err);
+    console.error("Error reading settings from file:", err);
   }
   return {};
 }
 
-function writeSettingsOnServer(data: any) {
+async function writeSettingsOnServer(data: any) {
+  if (isPostgresActive()) {
+    try {
+      await saveSettingsToDb(data);
+    } catch (e) {
+      console.error("Error writing settings to DB:", e);
+    }
+  }
+
   try {
     fs.writeFileSync(SETTINGS_FILE, JSON.stringify(data, null, 2), 'utf8');
   } catch (err) {
-    console.error("Error writing settings:", err);
+    console.error("Error writing settings to file:", err);
   }
 }
 
-function readReviewsOnServer() {
+async function readReviewsOnServer(): Promise<any[]> {
+  if (isPostgresActive()) {
+    try {
+      const dbReviews = await getReviewsFromDb();
+      if (dbReviews && dbReviews.length > 0) {
+        return dbReviews;
+      }
+    } catch (e) {
+      console.error("Error reading reviews from DB:", e);
+    }
+  }
+
   try {
     if (fs.existsSync(REVIEWS_FILE)) {
       const data = fs.readFileSync(REVIEWS_FILE, 'utf8');
       return JSON.parse(data);
     }
   } catch (err) {
-    console.error("Error reading reviews:", err);
+    console.error("Error reading reviews from file:", err);
   }
   return [];
 }
 
-function writeReviewsOnServer(data: any[]) {
+async function writeReviewsOnServer(data: any[]) {
+  if (isPostgresActive()) {
+    try {
+      await saveReviewsToDb(data);
+    } catch (e) {
+      console.error("Error writing reviews to DB:", e);
+    }
+  }
+
   try {
     fs.writeFileSync(REVIEWS_FILE, JSON.stringify(data, null, 2), 'utf8');
   } catch (err) {
-    console.error("Error writing reviews:", err);
+    console.error("Error writing reviews to file:", err);
   }
 }
 
@@ -237,29 +348,38 @@ app.post("/api/staff/logout", (req, res) => {
   res.json({ success: true, activeStaff: activeStaffSessions });
 });
 
+// Database Status Endpoint
+app.get("/api/db-status", (req, res) => {
+  res.json({
+    postgresActive: isPostgresActive(),
+    mode: isPostgresActive() ? "PostgreSQL (Cloud Database)" : "Local Persistent JSON File Mode",
+    hasDatabaseUrl: Boolean(process.env.DATABASE_URL)
+  });
+});
+
 // REST API Endpoints
-app.get("/api/orders", (req, res) => {
-  const serverOrders = readOrdersOnServer();
-  const deletedIds = readDeletedOrdersOnServer();
+app.get("/api/orders", async (req, res) => {
+  const serverOrders = await readOrdersOnServer();
+  const deletedIds = await readDeletedOrdersOnServer();
   const deletedSet = new Set(deletedIds);
   const cleanOrders = serverOrders.filter((o: any) => !deletedSet.has(o.id));
   res.json(cleanOrders);
 });
 
-app.delete("/api/orders/:id", (req, res) => {
+app.delete("/api/orders/:id", async (req, res) => {
   const { id } = req.params;
   
   // 1. Add to deleted list to prevent resurrection
-  const deletedIds = readDeletedOrdersOnServer();
+  const deletedIds = await readDeletedOrdersOnServer();
   if (!deletedIds.includes(id)) {
     deletedIds.push(id);
-    writeDeletedOrdersOnServer(deletedIds);
+    await writeDeletedOrdersOnServer(deletedIds, id);
   }
   
   // 2. Filter from existing active orders
-  const current = readOrdersOnServer();
+  const current = await readOrdersOnServer();
   const updated = current.filter((o: any) => o.id !== id);
-  writeOrdersOnServer(updated);
+  await writeOrdersOnServer(updated);
   
   // Real-time broadcast to all clients
   broadcastSSEEvent("orders_updated", { orders: updated, deletedId: id, deletedIds });
@@ -267,18 +387,18 @@ app.delete("/api/orders/:id", (req, res) => {
   res.json({ success: true, orders: updated, deletedId: id, deletedIds });
 });
 
-app.post("/api/orders", (req: any, res) => {
+app.post("/api/orders", async (req: any, res) => {
   const { orders: incomingOrders, publicUrl } = req.body;
   
   if (publicUrl) {
     lastKnownPublicUrl = publicUrl;
   }
 
-  const deletedIds = readDeletedOrdersOnServer();
+  const deletedIds = await readDeletedOrdersOnServer();
   const deletedSet = new Set(deletedIds);
 
   if (Array.isArray(incomingOrders)) {
-    const current = readOrdersOnServer();
+    const current = await readOrdersOnServer();
     const map = new Map<string, any>();
     
     // First index existing server-side orders, skipping deleted ones
@@ -308,7 +428,7 @@ app.post("/api/orders", (req: any, res) => {
       return (b.orderNumber || "").localeCompare(a.orderNumber || "", undefined, { numeric: true });
     });
     
-    writeOrdersOnServer(fullyMerged);
+    await writeOrdersOnServer(fullyMerged);
 
     // Real-time broadcast to all connected users (Staff & Main Admin)
     broadcastSSEEvent("orders_updated", fullyMerged);
@@ -316,7 +436,7 @@ app.post("/api/orders", (req: any, res) => {
     res.json(fullyMerged);
   } else if (Array.isArray(req.body)) {
     // Fallback for direct array posting
-    const current = readOrdersOnServer();
+    const current = await readOrdersOnServer();
     const map = new Map<string, any>();
     for (const o of current) {
       if (!deletedSet.has(o.id)) {
@@ -339,7 +459,7 @@ app.post("/api/orders", (req: any, res) => {
     const fullyMerged = Array.from(map.values()).sort((a, b) => {
       return (b.orderNumber || "").localeCompare(a.orderNumber || "", undefined, { numeric: true });
     });
-    writeOrdersOnServer(fullyMerged);
+    await writeOrdersOnServer(fullyMerged);
 
     // Real-time broadcast
     broadcastSSEEvent("orders_updated", fullyMerged);
@@ -351,15 +471,15 @@ app.post("/api/orders", (req: any, res) => {
 });
 
 // REST API Endpoints for Catalogue, Settings, and Reviews
-app.get("/api/catalogue", (req, res) => {
-  const catalogue = readCatalogueOnServer();
+app.get("/api/catalogue", async (req, res) => {
+  const catalogue = await readCatalogueOnServer();
   res.json(catalogue);
 });
 
-app.post("/api/catalogue", (req, res) => {
+app.post("/api/catalogue", async (req, res) => {
   const incoming = req.body;
   if (Array.isArray(incoming)) {
-    writeCatalogueOnServer(incoming);
+    await writeCatalogueOnServer(incoming);
     broadcastSSEEvent("catalogue_updated", incoming);
     res.json({ success: true, catalogue: incoming });
   } else {
@@ -367,17 +487,17 @@ app.post("/api/catalogue", (req, res) => {
   }
 });
 
-app.get("/api/settings", (req, res) => {
-  const settings = readSettingsOnServer();
+app.get("/api/settings", async (req, res) => {
+  const settings = await readSettingsOnServer();
   res.json(settings);
 });
 
-app.post("/api/settings", (req, res) => {
+app.post("/api/settings", async (req, res) => {
   const incoming = req.body;
   if (incoming && typeof incoming === 'object') {
-    const current = readSettingsOnServer();
+    const current = await readSettingsOnServer();
     const updated = { ...current, ...incoming };
-    writeSettingsOnServer(updated);
+    await writeSettingsOnServer(updated);
     broadcastSSEEvent("settings_updated", updated);
     res.json({ success: true, settings: updated });
   } else {
@@ -385,15 +505,15 @@ app.post("/api/settings", (req, res) => {
   }
 });
 
-app.get("/api/reviews", (req, res) => {
-  const reviews = readReviewsOnServer();
+app.get("/api/reviews", async (req, res) => {
+  const reviews = await readReviewsOnServer();
   res.json(reviews);
 });
 
-app.post("/api/reviews", (req, res) => {
+app.post("/api/reviews", async (req, res) => {
   const incoming = req.body;
   if (Array.isArray(incoming)) {
-    writeReviewsOnServer(incoming);
+    await writeReviewsOnServer(incoming);
     broadcastSSEEvent("reviews_updated", incoming);
     res.json({ success: true, reviews: incoming });
   } else {
@@ -453,10 +573,10 @@ app.post("/api/send-status", async (req: any, res) => {
 // API Endpoint to send overdue orders notification directly to app owner via LINE
 app.post("/api/send-overdue-line-alert", async (req: any, res) => {
   const { targetLineUserId } = req.body || {};
-  const settings = readSettingsOnServer();
+  const settings = await readSettingsOnServer();
   const ownerId = (targetLineUserId || settings.ownerLineUserId || "").trim();
 
-  const orders = readOrdersOnServer();
+  const orders = await readOrdersOnServer();
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
 
@@ -610,7 +730,7 @@ app.post("/api/webhook/line", async (req: any, res) => {
       console.log(`Received user text message: "${originalText}"`);
 
       // 2. Lookup Orders on Server
-      const orders = readOrdersOnServer();
+      const orders = await readOrdersOnServer();
       const cleanSearchText = text.replace(/[- \s]/g, ""); // Strip hyphens & spaces
 
       const matchedOrders = orders.filter((o: any) => {
@@ -638,7 +758,7 @@ app.post("/api/webhook/line", async (req: any, res) => {
           return o;
         });
         if (updatedAny) {
-          writeOrdersOnServer(updatedOrders);
+          await writeOrdersOnServer(updatedOrders);
           console.log(`[Webhook] Auto-linked lineUserId: ${event.source.userId} to matched orders.`);
         }
       }
@@ -732,6 +852,9 @@ app.post("/api/webhook/line", async (req: any, res) => {
 
 // Configure Vite middleware for development or Static Assets for production
 async function startServer() {
+  // Initialize PostgreSQL tables if DATABASE_URL is available
+  await initDb();
+
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },

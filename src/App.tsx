@@ -42,7 +42,8 @@ import {
   Image as ImageIcon,
   Trash2,
   Camera,
-  Check
+  Check,
+  Database
 } from 'lucide-react';
 
 export default function App() {
@@ -214,6 +215,24 @@ export default function App() {
   const [boutiqueLogo, setBoutiqueLogo] = useState<string>(() => {
     return localStorage.getItem('nunuh_boutique_logo') || '';
   });
+
+  const [dbStatus, setDbStatus] = useState<{ postgresActive?: boolean; mode?: string; hasDatabaseUrl?: boolean } | null>(null);
+
+  const checkDbStatus = async () => {
+    try {
+      const res = await fetch('/api/db-status');
+      if (res.ok) {
+        const data = await res.json();
+        setDbStatus(data);
+      }
+    } catch (e) {
+      console.warn('Could not fetch DB status:', e);
+    }
+  };
+
+  useEffect(() => {
+    checkDbStatus();
+  }, []);
 
   const handleUpdateBoutiquePhone = async (newPhone: string) => {
     setBoutiquePhone(newPhone);
@@ -1847,6 +1866,29 @@ export default function App() {
                   e.preventDefault();
                   setIsSettingsOpen(false);
                 }} className="space-y-4">
+                  {/* Database Persistence Status Badge */}
+                  <div className="bg-natural-sand/30 p-3 rounded-2xl border border-natural-wheat/60 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-natural-espresso flex items-center gap-1.5">
+                        <Database className="h-3.5 w-3.5 text-natural-clay" />
+                        <span>สถานะฐานข้อมูลถาวร (Database Storage)</span>
+                      </span>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 ${
+                        dbStatus?.postgresActive
+                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                          : 'bg-amber-100 text-amber-800 border border-amber-300'
+                      }`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${dbStatus?.postgresActive ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+                        {dbStatus?.postgresActive ? 'PostgreSQL เชื่อมต่อสำเร็จ 🟢' : 'Local Persistent Storage Mode 🟡'}
+                      </span>
+                    </div>
+                    <p className="text-[10.5px] text-natural-espresso/60 leading-relaxed">
+                      {dbStatus?.postgresActive
+                        ? '✅ ข้อมูลออเดอร์, การตั้งค่า และผู้ใช้งานถูกจัดเก็บบน PostgreSQL อย่างถาวร 100% (แม้ปิดเซิร์ฟเวอร์หรือ Refresh ข้อมูลจะไม่หาย)'
+                        : 'ℹ️ ระบบใช้งานโหมด Local File Storage หากเชื่อมต่อ DATABASE_URL บน Render ข้อมูลจะซิงค์เข้า PostgreSQL อัตโนมัติ'}
+                    </p>
+                  </div>
+
                   <div>
                     <label className="block text-xs font-bold text-natural-espresso/70 mb-1.5 flex items-center space-x-1">
                       <Phone className="h-3 w-3 text-natural-clay" />
