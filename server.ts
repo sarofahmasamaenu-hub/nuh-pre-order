@@ -4,6 +4,7 @@ import fs from "fs";
 import crypto from "crypto";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
+import { GoogleGenAI } from "@google/genai";
 import {
   initDb,
   isPostgresActive,
@@ -24,6 +25,43 @@ dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+
+// Lazy initialization for Gemini AI SDK
+let geminiClient: GoogleGenAI | null = null;
+function getGeminiClient(): GoogleGenAI | null {
+  if (!geminiClient && process.env.GEMINI_API_KEY) {
+    geminiClient = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  }
+  return geminiClient;
+}
+
+// Function to generate intelligent fashion and boutique reply using Gemini 3.7 Flash
+async function generateAiFashionReply(userMessage: string, customerName?: string): Promise<string> {
+  const client = getGeminiClient();
+  if (!client) {
+    return `สวัสดีค่ะคุณลูกค้า ⚜️ NUNUH Boutique ⚜️ ยินดีให้บริการค่ะ\n\n📌 วิธีการตรวจสอบสถานะออเดอร์อัตโนมัติ:\n• พิมพ์ เบอร์โทรศัพท์ ที่แจ้งไว้ตอนวัดตัว (เช่น 086-555-1234)\n• หรือพิมพ์ เลขที่ออเดอร์ (เช่น NU-26008)\n• หรือพิมพ์ ชื่อ-นามสกุล ของท่าน\n\nระบบจะส่งลิงก์ติดตามสถานะชุด สัดส่วน และคิวตัดเย็บให้ทันทีค่ะ ✨`;
+  }
+
+  try {
+    const response = await client.models.generateContent({
+      model: 'gemini-3.7-flash',
+      contents: userMessage,
+      config: {
+        systemInstruction: `คุณคือผู้ช่วย AI อัจฉริยะประจำร้าน "NUNUH Boutique" (นูเหนาะห์ บูทีค - ร้านตัดเย็บเสื้อผ้าสตรี ชุดเดรส ชุดราตรี ชุดเจ้าสาว ชุดลูกไม้ และชุดออกงานพรีเมียม).
+หน้าที่ของคุณ:
+1. ตอบคำถามลูกค้าใน LINE อย่างสุภาพ ไพเราะ อ่อนหวาน เป็นกันเอง ใช้น้ำเสียงแบบพนักงานห้องเสื้อชั้นนำ (ลงท้ายด้วยค่ะ/นะคะ)
+2. แนะนำแบบชุด สีผ้า ทรงกระโปรง การเลือกผ้าลูกไม้ การดูแลรักษาชุดสั่งตัด หรือการเตรียมตัวก่อนมาวัดตัวที่ร้าน
+3. หากลูกค้าต้องการเช็คออเดอร์ตัดเย็บ ให้แจ้งอย่างนุ่มนวลว่า "คุณลูกค้าสามารถพิมพ์เบอร์โทรศัพท์ หรือเลขที่ออเดอร์ เข้ามาในแชทนี้ได้เลยนะคะ ระบบจะค้นหาข้อมูลให้อัตโนมัติทันทีค่ะ"
+4. ข้อความต้องกระชับ อ่านง่ายบนหน้าจอมือถือ (ประมาณ 2-4 ย่อหน้า ไม่ยาวเกินไป) ใช้ emoji สไตล์พรีเมียม เช่น ⚜️ ✨ 👗 ✂️ 💖 ได้อย่างเหมาะสม`,
+      },
+    });
+
+    return response.text?.trim() || "สวัสดีค่ะ NUNUH Boutique ยินดีต้อนรับค่ะ สอบถามรายละเอียดการสั่งตัดชุด หรือพิมพ์เบอร์โทรศัพท์เพื่อติดตามออเดอร์ได้เลยนะคะ ✨";
+  } catch (err) {
+    console.error("Gemini AI generation error:", err);
+    return `สวัสดีค่ะคุณลูกค้า ⚜️ NUNUH Boutique ⚜️ ยินดีให้บริการค่ะ\n\n📌 คุณลูกค้าสามารถพิมพ์เบอร์โทรศัพท์ หรือเลขที่ออเดอร์เข้ามาเพื่อติดตามสถานะชุดสั่งตัดได้ทันทีเลยนะคะ ✨`;
+  }
+}
 
 // Body parser with raw body retention for LINE signature verification
 app.use(express.json({
@@ -687,167 +725,204 @@ app.get("/api/line-config-status", (req, res) => {
   });
 });
 
-// LINE Webhook Endpoint
-app.post("/api/webhook/line", async (req: any, res) => {
-  const LINE_CHANNEL_SECRET = process.env.LINE_CHANNEL_SECRET || "";
-  const LINE_CHANNEL_ACCESS_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN || "";
+// LINE Webhook Endpoint (Supports GET for browser status check & POST for LINE Messaging API Events & Verification)
+app.get(["/api/webhook/line", "/webhook/line", "/api/line/webhook", "/api/line-webhook"], (req, res) => {
+  res.status(200).json({
+    status: "ok",
+    message: "LINE Webhook endpoint is active and ready for Messaging API events.",
+    hasToken: Boolean(process.env.LINE_CHANNEL_ACCESS_TOKEN),
+    hasSecret: Boolean(process.env.LINE_CHANNEL_SECRET)
+  });
+});
 
-  const signature = req.headers['x-line-signature'] as string;
-  const bodyString = req.rawBody || JSON.stringify(req.body);
+app.post(["/api/webhook/line", "/webhook/line", "/api/line/webhook", "/api/line-webhook"], async (req: any, res) => {
+  try {
+    const LINE_CHANNEL_SECRET = process.env.LINE_CHANNEL_SECRET || "";
+    const LINE_CHANNEL_ACCESS_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN || "";
 
-  console.log("--- LINE Webhook Event Received ---");
-  console.log("Signature from header:", signature);
+    const signature = req.headers['x-line-signature'] as string;
+    const bodyString = req.rawBody || JSON.stringify(req.body);
 
-  // 1. Signature Verification
-  if (LINE_CHANNEL_SECRET) {
-    const hash = crypto
-      .createHmac("SHA256", LINE_CHANNEL_SECRET)
-      .update(bodyString)
-      .digest("base64");
-
-    if (hash !== signature) {
-      console.warn("⚠️ LINE Signature validation failed. Computed hash:", hash, "vs Header signature:", signature);
-      // We will still proceed or log, but during LINE console verification, this might fail if the secret is wrong.
-      // To ensure that the Verify button works even if they haven't set the correct channel secret yet,
-      // we log it as warning but do not force a 401 error unless they are in high security mode.
-    } else {
-      console.log("✅ LINE Webhook Signature validated successfully!");
+    console.log("--- LINE Webhook Event Received ---");
+    if (signature) {
+      console.log("Signature from header:", signature);
     }
-  } else {
-    console.log("ℹ️ LINE_CHANNEL_SECRET not set. Bypassing signature verification.");
-  }
 
-  const events = req.body?.events || [];
-  console.log(`Processing ${events.length} event(s)...`);
+    // 1. Signature Verification (if LINE_CHANNEL_SECRET is configured)
+    if (LINE_CHANNEL_SECRET && signature) {
+      const hash = crypto
+        .createHmac("SHA256", LINE_CHANNEL_SECRET)
+        .update(bodyString)
+        .digest("base64");
 
-  for (const event of events) {
-    // Standard text message event
-    if (event.type === "message" && event.message?.type === "text") {
-      const replyToken = event.replyToken;
-      const originalText = event.message.text.trim();
-      const text = originalText.toLowerCase();
+      if (hash !== signature) {
+        console.warn("⚠️ LINE Signature mismatch. Computed hash:", hash, "vs Header signature:", signature);
+      } else {
+        console.log("✅ LINE Webhook Signature validated successfully!");
+      }
+    }
 
-      console.log(`Received user text message: "${originalText}"`);
+    const events = req.body?.events || [];
+    console.log(`Processing ${events.length} event(s)...`);
 
-      // 2. Lookup Orders on Server
-      const orders = await readOrdersOnServer();
-      const cleanSearchText = text.replace(/[- \s]/g, ""); // Strip hyphens & spaces
+    // Handle incoming events asynchronously
+    for (const event of events) {
+      // Standard text message event
+      if (event.type === "message" && event.message?.type === "text") {
+        const replyToken = event.replyToken;
+        const originalText = event.message.text.trim();
+        const text = originalText.toLowerCase();
 
-      const matchedOrders = orders.filter((o: any) => {
-        const phoneClean = (o.customerPhone || "").replace(/[- \s]/g, "");
-        const orderNumClean = (o.orderNumber || "").replace(/[- \s]/g, "").toLowerCase();
-        const nameClean = (o.customerName || "").toLowerCase();
+        console.log(`Received user text message: "${originalText}"`);
 
-        return (
-          (cleanSearchText.length >= 4 && phoneClean.includes(cleanSearchText)) ||
-          orderNumClean.includes(text) ||
-          nameClean.includes(text)
-        );
-      });
+        // Lookup Orders on Server
+        const orders = await readOrdersOnServer();
+        const cleanSearchText = text.replace(/[- \s]/g, ""); // Strip hyphens & spaces
 
-      // Save lineUserId to matched orders so admin can message/open chat directly later
-      if (matchedOrders.length > 0 && event.source?.userId) {
-        let updatedAny = false;
-        const updatedOrders = orders.map((o: any) => {
-          if (matchedOrders.some((mo: any) => mo.id === o.id)) {
-            if (o.lineUserId !== event.source.userId) {
-              o.lineUserId = event.source.userId;
-              updatedAny = true;
+        const matchedOrders = orders.filter((o: any) => {
+          const phoneClean = (o.customerPhone || "").replace(/[- \s]/g, "");
+          const orderNumClean = (o.orderNumber || "").replace(/[- \s]/g, "").toLowerCase();
+          const nameClean = (o.customerName || "").toLowerCase();
+
+          return (
+            (cleanSearchText.length >= 4 && phoneClean.includes(cleanSearchText)) ||
+            orderNumClean.includes(text) ||
+            nameClean.includes(text)
+          );
+        });
+
+        // Save lineUserId to matched orders so admin can message/open chat directly later
+        if (matchedOrders.length > 0 && event.source?.userId) {
+          let updatedAny = false;
+          const updatedOrders = orders.map((o: any) => {
+            if (matchedOrders.some((mo: any) => mo.id === o.id)) {
+              if (o.lineUserId !== event.source.userId) {
+                o.lineUserId = event.source.userId;
+                updatedAny = true;
+              }
+            }
+            return o;
+          });
+          if (updatedAny) {
+            await writeOrdersOnServer(updatedOrders);
+            console.log(`[Webhook] Auto-linked lineUserId: ${event.source.userId} to matched orders.`);
+          }
+        }
+
+        // Formulate Rich Response
+        let replyMessage = "";
+        const baseAppUrl = lastKnownPublicUrl || process.env.PUBLIC_APP_URL || `https://${req.get('host')}`;
+
+        if (matchedOrders.length === 0) {
+          const isLikelySearchQuery = /^(\+?66|0)[0-9]{8,9}$/.test(cleanSearchText) || /^[A-Za-z0-9_-]{4,15}$/.test(cleanSearchText);
+          
+          if (isLikelySearchQuery && cleanSearchText.length >= 6) {
+            replyMessage = `สวัสดีค่ะคุณลูกค้า ⚜️ NUNUH Boutique ⚜️ ยินดีให้บริการค่ะ\n\n❌ ขออภัยค่ะ ไม่พบข้อมูลออเดอร์เสื้อผ้าของคุณลูกค้าจากคำค้นหา "${originalText}"\n\n📌 วิธีการตรวจสอบสถานะออเดอร์อัตโนมัติ:\n• พิมพ์ เบอร์โทรศัพท์ ที่แจ้งไว้ตอนวัดตัว (เช่น 086-555-1234)\n• หรือพิมพ์ เลขที่ออเดอร์ (เช่น NU-26008)\n• หรือพิมพ์ ชื่อ-นามสกุล ของท่าน\n\nระบบจะประมวลผลข้อมูลและส่งลิงก์ติดตามงานให้ท่านตรวจสอบรายละเอียด สัดส่วนที่วัดตัว และความคืบหน้าของชุดได้ทันทีเลยค่ะ ✨`;
+          } else {
+            // Intelligent conversation / advice powered by Gemini AI
+            try {
+              replyMessage = await generateAiFashionReply(originalText);
+            } catch (e) {
+              replyMessage = `สวัสดีค่ะคุณลูกค้า ⚜️ NUNUH Boutique ⚜️ ยินดีให้บริการค่ะ\n\nคุณลูกค้าสามารถสอบถามข้อมูลการสั่งตัดชุด หรือพิมพ์เบอร์โทรศัพท์/เลขที่ออเดอร์ เพื่อติดตามสถานะงานตัดเย็บได้ตลอด 24 ชม. เลยนะคะ ✨`;
             }
           }
-          return o;
-        });
-        if (updatedAny) {
-          await writeOrdersOnServer(updatedOrders);
-          console.log(`[Webhook] Auto-linked lineUserId: ${event.source.userId} to matched orders.`);
+        } else if (matchedOrders.length === 1) {
+          const order = matchedOrders[0];
+          
+          // Map Status codes to beautiful labels
+          const statusMapTH: Record<string, string> = {
+            RECEIVED: "รับออเดอร์เรียบร้อย (Received)",
+            DESIGNING: "กำลังออกแบบและจัดเตรียม (Designing)",
+            CUTTING: "ขึ้นแบบและตัดผ้า (Cutting)",
+            SEWING: "ขึ้นโครงและเย็บประกอบ (Sewing)",
+            FITTING: "ฟิตติ้งและปรับแต่งตัว (Fitting)",
+            READY: "ตัดเย็บเรียบร้อยพร้อมส่งมอบ (Ready)",
+            COMPLETED: "ส่งมอบสำเร็จเรียบร้อยแล้วค่ะ (Completed) 🎉"
+          };
+          const statusLabel = statusMapTH[order.status] || order.status;
+
+          // Date display
+          let formattedDelivery = order.deliveryDate;
+          try {
+            formattedDelivery = new Date(order.deliveryDate).toLocaleDateString('th-TH', {
+              day: 'numeric',
+              month: 'long',
+              year: 'numeric'
+            });
+          } catch (e) {}
+
+          const lineUserIdParam = event.source?.userId ? `&lineUserId=${event.source.userId}` : '';
+          const portalUrl = `${baseAppUrl}?tab=customer&search=${order.customerPhone}&mode=customer${lineUserIdParam}`;
+
+          replyMessage = `⚜️ อัปเดตสถานะชุดสั่งตัด NUNUH Boutique ⚜️\n\nเรียนคุณ: ${order.customerName}\nรหัสออเดอร์: ${order.orderNumber}\nประเภทชุด: ${order.dressType}\n\n📍 สถานะปัจจุบัน: [${statusLabel}]\n📅 กำหนดส่งมอบ: ${formattedDelivery}\n\nท่านสามารถเปิดดูข้อมูลใบรับออเดอร์ รายละเอียดสัดส่วน และประวัติการชำระเงินมัดจำแบบละเอียดด้วยตนเองได้ที่นี่ค่ะ:\n🔗 ${portalUrl}\n\nหากท่านต้องการติดต่อพนักงานเพิ่มเติม สามารถพิมพ์ข้อความทิ้งไว้ในแชทนี้ได้เลยนะคะ ✨`;
+        } else {
+          // Multiple orders matched
+          let listText = "";
+          matchedOrders.slice(0, 5).forEach((order: any, idx: number) => {
+            listText += `${idx + 1}. คุณ ${order.customerName} - ออเดอร์ ${order.orderNumber} (${order.dressType})\n`;
+          });
+          
+          const lineUserIdParam = event.source?.userId ? `&lineUserId=${event.source.userId}` : '';
+          const portalUrl = `${baseAppUrl}?tab=customer&search=${matchedOrders[0].customerPhone}&mode=customer${lineUserIdParam}`;
+
+          replyMessage = `⚜️ พบข้อมูลที่เกี่ยวข้องทั้งหมด ${matchedOrders.length} ออเดอร์ค่ะ:\n\n${listText}\nคุณสามารถเลือกเปิดดูรายละเอียด สัดส่วน และสถานะของทุกออเดอร์ได้ที่ลิงก์นี้เลยค่ะ:\n🔗 ${portalUrl}\n\nขอบพระคุณค่ะ 💖`;
         }
-      }
 
-      // 3. Formulate Rich Response
-      let replyMessage = "";
-      const baseAppUrl = lastKnownPublicUrl || process.env.PUBLIC_APP_URL || `https://${req.get('host')}`;
+        // Send Reply via LINE messaging API
+        if (LINE_CHANNEL_ACCESS_TOKEN && replyToken) {
+          try {
+            const response = await fetch("https://api.line.me/v2/bot/message/reply", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${LINE_CHANNEL_ACCESS_TOKEN}`
+              },
+              body: JSON.stringify({
+                replyToken: replyToken,
+                messages: [
+                  {
+                    type: "text",
+                    text: replyMessage
+                  }
+                ]
+              })
+            });
 
-      if (matchedOrders.length === 0) {
-        replyMessage = `สวัสดีค่ะคุณลูกค้า ⚜️ NUNUH Boutique ⚜️ ยินดีให้บริการค่ะ\n\n❌ ขออภัยค่ะ ไม่พบข้อมูลออเดอร์เสื้อผ้าของคุณลูกค้าจากคำค้นหา "${originalText}"\n\n📌 วิธีการตรวจสอบสถานะออเดอร์อัตโนมัติ:\n• พิมพ์ เบอร์โทรศัพท์ ที่แจ้งไว้ตอนวัดตัว (เช่น 086-555-1234)\n• หรือพิมพ์ เลขที่ออเดอร์ (เช่น NU-26008)\n• หรือพิมพ์ ชื่อ-นามสกุล ของท่าน\n\nระบบจะประมวลผลข้อมูลและส่งลิงก์ติดตามงานให้ท่านตรวจสอบรายละเอียด สัดส่วนที่วัดตัว และความคืบหน้าของชุดได้ทันทีเลยค่ะ ✨`;
-      } else if (matchedOrders.length === 1) {
-        const order = matchedOrders[0];
-        
-        // Map Status codes to beautiful labels
-        const statusMapTH: Record<string, string> = {
-          RECEIVED: "รับออเดอร์เรียบร้อย (Received)",
-          DESIGNING: "กำลังออกแบบและจัดเตรียม (Designing)",
-          CUTTING: "ขึ้นแบบและตัดผ้า (Cutting)",
-          SEWING: "ขึ้นโครงและเย็บประกอบ (Sewing)",
-          FITTING: "ฟิตติ้งและปรับแต่งตัว (Fitting)",
-          READY: "ตัดเย็บเรียบร้อยพร้อมส่งมอบ (Ready)",
-          COMPLETED: "ส่งมอบสำเร็จเรียบร้อยแล้วค่ะ (Completed) 🎉"
-        };
-        const statusLabel = statusMapTH[order.status] || order.status;
-
-        // Date display
-        let formattedDelivery = order.deliveryDate;
-        try {
-          formattedDelivery = new Date(order.deliveryDate).toLocaleDateString('th-TH', {
-            day: 'numeric',
-            month: 'long',
-            year: 'numeric'
-          });
-        } catch (e) {}
-
-        const lineUserIdParam = event.source?.userId ? `&lineUserId=${event.source.userId}` : '';
-        const portalUrl = `${baseAppUrl}?tab=customer&search=${order.customerPhone}&mode=customer${lineUserIdParam}`;
-
-        replyMessage = `⚜️ อัปเดตสถานะชุดสั่งตัด NUNUH Boutique ⚜️\n\nเรียนคุณ: ${order.customerName}\nรหัสออเดอร์: ${order.orderNumber}\nประเภทชุด: ${order.dressType}\n\n📍 สถานะปัจจุบัน: [${statusLabel}]\n📅 กำหนดส่งมอบ: ${formattedDelivery}\n\nท่านสามารถเปิดดูข้อมูลใบรับออเดอร์ รายละเอียดสัดส่วน และประวัติการชำระเงินมัดจำแบบละเอียดด้วยตนเองได้ที่นี่ค่ะ:\n🔗 ${portalUrl}\n\nหากท่านต้องการติดต่อพนักงานเพิ่มเติม สามารถพิมพ์ข้อความทิ้งไว้ในแชทนี้ได้เลยนะคะ ✨`;
-      } else {
-        // Multiple orders matched
-        let listText = "";
-        matchedOrders.slice(0, 5).forEach((order: any, idx: number) => {
-          listText += `${idx + 1}. คุณ ${order.customerName} - ออเดอร์ ${order.orderNumber} (${order.dressType})\n`;
-        });
-        
-        const lineUserIdParam = event.source?.userId ? `&lineUserId=${event.source.userId}` : '';
-        const portalUrl = `${baseAppUrl}?tab=customer&search=${matchedOrders[0].customerPhone}&mode=customer${lineUserIdParam}`;
-
-        replyMessage = `⚜️ พบข้อมูลที่เกี่ยวข้องทั้งหมด ${matchedOrders.length} ออเดอร์ค่ะ:\n\n${listText}\nคุณสามารถเลือกเปิดดูรายละเอียด สัดส่วน และสถานะของทุกออเดอร์ได้ที่ลิงก์นี้เลยค่ะ:\n🔗 ${portalUrl}\n\nขอบพระคุณค่ะ 💖`;
-      }
-
-      // 4. Send Reply via LINE messaging API
-      if (LINE_CHANNEL_ACCESS_TOKEN) {
-        try {
-          const response = await fetch("https://api.line.me/v2/bot/message/reply", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${LINE_CHANNEL_ACCESS_TOKEN}`
-            },
-            body: JSON.stringify({
-              replyToken: replyToken,
-              messages: [
-                {
-                  type: "text",
-                  text: replyMessage
-                }
-              ]
-            })
-          });
-
-          if (!response.ok) {
-            const errBody = await response.text();
-            console.error("❌ Failed to send LINE reply. HTTP status:", response.status, "Response:", errBody);
-          } else {
-            console.log("✅ Send LINE reply successful!");
+            if (!response.ok) {
+              const errBody = await response.text();
+              console.error("❌ Failed to send LINE reply. HTTP status:", response.status, "Response:", errBody);
+            } else {
+              console.log("✅ Send LINE reply successful!");
+            }
+          } catch (err) {
+            console.error("❌ Error sending LINE reply:", err);
           }
-        } catch (err) {
-          console.error("❌ Error sending LINE reply:", err);
         }
-      } else {
-        console.warn("⚠️ LINE_CHANNEL_ACCESS_TOKEN is not configured. Webhook ran successfully but could not reply to LINE.");
       }
     }
-  }
 
-  // Always return 200 OK so that LINE platform accepts the webhook delivery
-  res.status(200).send("OK");
+    // Return 200 OK with JSON { message: "OK" } for LINE Developer verification & normal delivery
+    return res.status(200).json({ message: "OK" });
+  } catch (error) {
+    console.error("❌ Error in LINE Webhook handler:", error);
+    // Return 200 OK anyway to prevent LINE Webhook disablement
+    return res.status(200).json({ message: "OK" });
+  }
+});
+
+// Direct AI Assistant API endpoint for web client or testing
+app.post("/api/chat/gemini", async (req, res) => {
+  try {
+    const { message, customerName } = req.body || {};
+    if (!message || typeof message !== 'string') {
+      return res.status(400).json({ error: "Message is required" });
+    }
+    const reply = await generateAiFashionReply(message, customerName);
+    return res.json({ reply, success: true });
+  } catch (error: any) {
+    console.error("Chat API error:", error);
+    return res.status(500).json({ error: error?.message || "Internal server error" });
+  }
 });
 
 // Configure Vite middleware for development or Static Assets for production

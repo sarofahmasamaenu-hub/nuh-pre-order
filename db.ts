@@ -16,7 +16,7 @@ if (connectionString) {
       ssl: isLocalhost ? false : { rejectUnauthorized: false },
       max: 20, // Max concurrent connections in pool
       idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 5000,
+      connectionTimeoutMillis: 3000, // Fail fast (3s) if network/DNS unreachable
     };
 
     pool = new Pool(poolConfig);
@@ -26,7 +26,8 @@ if (connectionString) {
     });
 
     pool.on("error", (err) => {
-      console.error("❌ Unexpected error on idle PostgreSQL client:", err);
+      // Suppress noisy idle disconnection logs
+      isDbConnected = false;
     });
   } catch (err) {
     console.error("❌ Failed to initialize PostgreSQL pool:", err);
@@ -164,9 +165,14 @@ export async function initDb(): Promise<boolean> {
     } finally {
       client.release();
     }
-  } catch (err) {
-    console.error("❌ Error initializing PostgreSQL tables:", err);
+  } catch (err: any) {
     isDbConnected = false;
+    const errMsg = err?.message || String(err);
+    if (errMsg.includes("getaddrinfo") || errMsg.includes("EAI_AGAIN") || errMsg.includes("ENOTFOUND")) {
+      console.log("ℹ️ PostgreSQL Hostname is only accessible inside Render Private Network (or DNS is resolving). Falling back gracefully to Local File Storage.");
+    } else {
+      console.warn("⚠️ PostgreSQL connection notice:", errMsg, "- Using Local File Storage fallback.");
+    }
     return false;
   }
 }
@@ -179,7 +185,7 @@ export function isPostgresActive(): boolean {
 // Orders DB Operations
 // ----------------------------------------------------
 export async function getOrdersFromDb(): Promise<any[]> {
-  if (!pool) return [];
+  if (!isPostgresActive() || !pool) return [];
   try {
     const res = await pool.query(`
       SELECT 
@@ -231,7 +237,7 @@ export async function getOrdersFromDb(): Promise<any[]> {
 }
 
 export async function saveOrderToDb(order: any): Promise<boolean> {
-  if (!pool || !order || !order.id) return false;
+  if (!isPostgresActive() || !pool || !order || !order.id) return false;
   try {
     const query = `
       INSERT INTO orders (
@@ -323,7 +329,7 @@ export async function saveOrderToDb(order: any): Promise<boolean> {
 }
 
 export async function saveMultipleOrdersToDb(orders: any[]): Promise<boolean> {
-  if (!pool || !Array.isArray(orders)) return false;
+  if (!isPostgresActive() || !pool || !Array.isArray(orders)) return false;
   try {
     for (const order of orders) {
       await saveOrderToDb(order);
@@ -336,7 +342,7 @@ export async function saveMultipleOrdersToDb(orders: any[]): Promise<boolean> {
 }
 
 export async function deleteOrderInDb(id: string): Promise<boolean> {
-  if (!pool || !id) return false;
+  if (!isPostgresActive() || !pool || !id) return false;
   try {
     // Record to deleted_orders table to prevent resurrection
     await pool.query(`INSERT INTO deleted_orders (id) VALUES ($1) ON CONFLICT (id) DO NOTHING`, [id]);
@@ -350,7 +356,7 @@ export async function deleteOrderInDb(id: string): Promise<boolean> {
 }
 
 export async function getDeletedOrderIdsFromDb(): Promise<string[]> {
-  if (!pool) return [];
+  if (!isPostgresActive() || !pool) return [];
   try {
     const res = await pool.query(`SELECT id FROM deleted_orders`);
     return res.rows.map(r => r.id);
@@ -364,7 +370,7 @@ export async function getDeletedOrderIdsFromDb(): Promise<string[]> {
 // Catalogue DB Operations
 // ----------------------------------------------------
 export async function getCatalogueFromDb(): Promise<any[]> {
-  if (!pool) return [];
+  if (!isPostgresActive() || !pool) return [];
   try {
     const res = await pool.query(`SELECT raw_data FROM catalogue ORDER BY created_at ASC`);
     return res.rows.map(r => r.raw_data).filter(Boolean);
@@ -375,7 +381,7 @@ export async function getCatalogueFromDb(): Promise<any[]> {
 }
 
 export async function saveCatalogueToDb(items: any[]): Promise<boolean> {
-  if (!pool || !Array.isArray(items)) return false;
+  if (!isPostgresActive() || !pool || !Array.isArray(items)) return false;
   try {
     for (const item of items) {
       if (!item.id) continue;
@@ -415,7 +421,7 @@ export async function saveCatalogueToDb(items: any[]): Promise<boolean> {
 // Store Settings DB Operations
 // ----------------------------------------------------
 export async function getSettingsFromDb(): Promise<any> {
-  if (!pool) return {};
+  if (!isPostgresActive() || !pool) return {};
   try {
     const res = await pool.query(`SELECT key, value FROM store_settings`);
     const settings: any = {};
@@ -430,7 +436,7 @@ export async function getSettingsFromDb(): Promise<any> {
 }
 
 export async function saveSettingsToDb(settings: any): Promise<boolean> {
-  if (!pool || !settings || typeof settings !== "object") return false;
+  if (!isPostgresActive() || !pool || !settings || typeof settings !== "object") return false;
   try {
     for (const [key, val] of Object.entries(settings)) {
       await pool.query(`
@@ -452,7 +458,7 @@ export async function saveSettingsToDb(settings: any): Promise<boolean> {
 // Reviews DB Operations
 // ----------------------------------------------------
 export async function getReviewsFromDb(): Promise<any[]> {
-  if (!pool) return [];
+  if (!isPostgresActive() || !pool) return [];
   try {
     const res = await pool.query(`SELECT raw_data FROM reviews ORDER BY created_at DESC`);
     return res.rows.map(r => r.raw_data).filter(Boolean);
@@ -463,7 +469,7 @@ export async function getReviewsFromDb(): Promise<any[]> {
 }
 
 export async function saveReviewsToDb(reviews: any[]): Promise<boolean> {
-  if (!pool || !Array.isArray(reviews)) return false;
+  if (!isPostgresActive() || !pool || !Array.isArray(reviews)) return false;
   try {
     for (const rev of reviews) {
       if (!rev.id) continue;
