@@ -112,7 +112,7 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
   });
 
   const [lineOaChatUrl, setLineOaChatUrl] = useState(() => {
-    return localStorage.getItem('nunuh_line_oa_chat_url') || 'https://chat.line.biz/';
+    return localStorage.getItem('nunuh_line_oa_chat_url') || 'https://chat.line.biz/U7ad64905450d2c18cf2eb27f61c5ea4c';
   });
 
   const [ownerLineUserId, setOwnerLineUserId] = useState(() => {
@@ -268,15 +268,16 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
     const rawUserId = order.lineUserId?.trim() || '';
     const socialInfo = getSocialInfo(order.customerSocial);
     
-    // Check if rawUserId is a URL or contains a real LINE User ID (starts with U and followed by 32 alphanumeric chars)
+    // Check if rawUserId is a URL or contains a real LINE User ID (starts with U and followed by alphanumeric chars)
     let extractedUserId = '';
-    const matches = rawUserId.match(/U[0-9a-zA-Z]{32}/g);
+    const matches = rawUserId.match(/U[0-9a-zA-Z]+/g);
     if (matches && matches.length > 0) {
-      // The customer's User ID is always the last U[0-9a-zA-Z]{32} in the URL or string
       extractedUserId = matches[matches.length - 1];
+    } else if (rawUserId.startsWith('U') || rawUserId.startsWith('u') || rawUserId.startsWith('http')) {
+      extractedUserId = rawUserId;
     }
     
-    const isRealUserId = !!extractedUserId && /^U[0-9a-zA-Z]{32}$/.test(extractedUserId);
+    const isRealUserId = !!extractedUserId && (extractedUserId.startsWith('http') || extractedUserId.length >= 8);
     
     let hasLineUserId = false;
     let lineUserId = '';
@@ -295,17 +296,17 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
     
     if (socialInfo && socialInfo.type === 'line' && socialInfo.cleanId) {
       let socialExtracted = '';
-      const socialMatches = socialInfo.cleanId.match(/U[0-9a-zA-Z]{32}/g);
+      const socialMatches = socialInfo.cleanId.match(/U[0-9a-zA-Z]+/g);
       if (socialMatches && socialMatches.length > 0) {
         socialExtracted = socialMatches[socialMatches.length - 1];
       }
       
-      const isSocialRealUserId = !!socialExtracted && /^U[0-9a-zA-Z]{32}$/.test(socialExtracted);
+      const isSocialRealUserId = !!socialExtracted && socialExtracted.length >= 8;
       if (isSocialRealUserId) {
         if (!hasLineUserId) {
           hasLineUserId = true;
           lineUserId = socialExtracted;
-          hasPersonalLineId = false; // cleanId is actually a LINE User ID, not a personal ID
+          hasPersonalLineId = false;
         }
       } else if (!hasLineUserId && !hasPersonalLineId) {
         hasPersonalLineId = true;
@@ -361,13 +362,12 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
       return;
     }
     
-    const matches = testLineUserId.match(/U[0-9a-zA-Z]{32}/g);
+    const matches = testLineUserId.match(/U[0-9a-zA-Z]+/g);
     let extractedId = '';
     if (matches && matches.length > 0) {
       extractedId = matches[matches.length - 1];
     } else {
-      setTestStatus({ status: 'error', errorMsg: 'รหัส LINE User ID ไม่ถูกต้อง จะต้องขึ้นต้นด้วย U และตามด้วยตัวอักษร/ตัวเลข 32 ตัวค่ะ' });
-      return;
+      extractedId = testLineUserId.trim();
     }
 
     setTestStatus({ status: 'sending', errorMsg: '' });
@@ -401,20 +401,42 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
     }
   };
 
-  const getDirectOaUrl = (order: Order, lineUserId: string) => {
-    const rawUserId = order.lineUserId?.trim() || '';
+  const getDirectOaUrl = (order: Order, targetUserId?: string) => {
+    const rawUserId = (targetUserId || order.lineUserId || '').trim();
     if (rawUserId.startsWith('http://') || rawUserId.startsWith('https://')) {
       return rawUserId;
     }
-    const shopMatches = lineOaChatUrl.match(/U[0-9a-zA-Z]{32}/g);
-    if (shopMatches && shopMatches.length > 0) {
-      const shopId = shopMatches[0];
-      return `https://chat.line.biz/${shopId}/chat/${lineUserId}`;
+
+    // Clean user ID if it contains URL or prefix
+    let cleanUserId = rawUserId;
+    const userMatches = rawUserId.match(/U[0-9a-zA-Z]+/g);
+    if (userMatches && userMatches.length > 0) {
+      cleanUserId = userMatches[userMatches.length - 1];
     }
+
+    // 1. If lineOaChatUrl has a shop account ID (e.g. chat.line.biz/U7ad64905450d2c18cf2eb27f61c5ea4c)
+    const shopMatches = lineOaChatUrl.match(/U[0-9a-zA-Z]{32}/g);
+    if (shopMatches && shopMatches.length > 0 && cleanUserId) {
+      const shopId = shopMatches[0];
+      return `https://chat.line.biz/${shopId}/chat/${cleanUserId}`;
+    }
+
+    // 2. Default Shop Account ID for NUNUH Boutique
+    const defaultShopId = 'U7ad64905450d2c18cf2eb27f61c5ea4c';
+    if (cleanUserId) {
+      return `https://chat.line.biz/${defaultShopId}/chat/${cleanUserId}`;
+    }
+
+    // 3. Fallback using Account Manager ID
+    const cleanId = lineOaId.startsWith('@') ? lineOaId : `@${lineOaId}`;
+    if (cleanUserId) {
+      return `https://manager.line.biz/account/${cleanId}/chat/user/${cleanUserId}`;
+    }
+
     if (lineOaChatUrl && lineOaChatUrl.startsWith('http')) {
       return lineOaChatUrl;
     }
-    return `https://chat.line.biz/`;
+    return `https://chat.line.biz/U7ad64905450d2c18cf2eb27f61c5ea4c`;
   };
 
   const handleDirectLineChat = (order: Order) => {
@@ -435,10 +457,11 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
     }
 
     const { hasLineUserId, lineUserId } = getLineDetails(order);
+    const targetUserId = lineUserId || order.lineUserId?.trim() || '';
 
-    if (hasLineUserId) {
-      // ถ้ามี LINE User ID ของระบบ LINE OA ให้เปิดห้องแชทลูกค้ารายนั้นโดยตรงบน LINE OA Manager ทันที
-      const directOaUrl = getDirectOaUrl(order, lineUserId);
+    if (hasLineUserId || targetUserId) {
+      // ถ้ามี LINE User ID ให้เปิดห้องแชทลูกค้ารายนั้นโดยตรงบน LINE OA Manager ทันที
+      const directOaUrl = getDirectOaUrl(order, targetUserId);
       
       alert(
         `📋 คัดลอกข้อความและสถานะอัปเดตของ คุณ ${order.customerName} เรียบร้อยแล้วค่ะ!\n\n` +
@@ -447,14 +470,14 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
       window.open(directOaUrl, '_blank');
     } else {
       // ถ้าไม่มี LINE User ID หรือเป็นกรณีอื่นๆ ให้เปิดแผงควบคุมหลัก LINE OA แล้วแนะนำให้แอดมินค้นหาชื่อ
-      const generalOaUrl = lineOaChatUrl || 'https://chat.line.biz/';
+      const generalOaUrl = lineOaChatUrl || 'https://chat.line.biz/U7ad64905450d2c18cf2eb27f61c5ea4c';
       
       alert(
         `📋 คัดลอกข้อความและสถานะอัปเดตของ คุณ ${order.customerName} เรียบร้อยแล้วค่ะ!\n\n` +
         `เนื่องจากออเดอร์นี้ยังไม่ได้รับเชื่อมโยงข้อมูล LINE User ID ล่าสุดของลูกค้า (รหัสขึ้นต้นด้วย U...) ทำให้ระบบไม่สามารถนำทางไปยังหน้าห้องแชทของลูกค้ารายนี้โดยตรงได้\n\n` +
         `💡 วิธีเชื่อมลิงก์ไปห้องแชทของลูกค้าโดยตรงทันทีในครั้งหน้า:\n` +
         `1. ค้นหาชื่อแชท คุณ "${order.customerName}" ในหน้าแผงควบคุมหลัก LINE OA ของร้านคุณที่กำลังจะเปิดขึ้นนี้\n` +
-        `2. สังเกตแถบลิงก์ (URL Address) ของเบราว์เซอร์ขณะคุยกับลูกค้าคนนี้ จะมีรหัสผู้ใช้แสดงอยู่หลังคำว่า /user/ (เช่น Uxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx)\n` +
+        `2. สังเกตแถบลิงก์ (URL Address) ของเบราว์เซอร์ขณะคุยกับลูกค้าคนนี้ จะมีรหัสผู้ใช้แสดงอยู่หลังคำว่า /chat/ (เช่น Uxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx)\n` +
         `3. คัดลอกรหัสนั้นมาใส่ในช่อง "LINE User ID" ในหน้าแก้ไขออเดอร์นี้ได้เลยค่ะ! (หรือรอให้ลูกค้าทักเข้ามาสอบถามสถานะด้วยเบอร์โทร/เลขที่ออเดอร์ผ่านแชทก่อน ระบบบอทจะบันทึกให้อัตโนมัติค่ะ)\n\n` +
         `กรุณากดตกลงเพื่อเปิดแผงแชทของร้านคุณ และกดค้นหาชื่อลูกค้าเพื่อนำข้อความที่คัดลอกไว้ไปวางส่งต่อได้ทันทีค่ะ 💬`
       );
@@ -464,12 +487,13 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
 
   const handleOpenLineOaChat = (order: Order) => {
     const { hasLineUserId, lineUserId } = getLineDetails(order);
+    const targetUserId = lineUserId || order.lineUserId?.trim() || '';
 
-    if (hasLineUserId) {
-      const url = getDirectOaUrl(order, lineUserId);
+    if (hasLineUserId || targetUserId) {
+      const url = getDirectOaUrl(order, targetUserId);
       window.open(url, '_blank');
     } else {
-      const generalOaUrl = lineOaChatUrl || 'https://chat.line.biz/';
+      const generalOaUrl = lineOaChatUrl || 'https://chat.line.biz/U7ad64905450d2c18cf2eb27f61c5ea4c';
       window.open(generalOaUrl, '_blank');
     }
   };
@@ -493,20 +517,21 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
     }
 
     const { hasLineUserId, lineUserId } = getLineDetails(order);
+    const targetUserId = lineUserId || order.lineUserId?.trim() || '';
 
-    if (hasLineUserId) {
+    if (hasLineUserId || targetUserId) {
       // 1. กรณีเป็น LINE User ID จริง: พยายามส่งอัตโนมัติผ่าน API บอทก่อน
       try {
         const response = await fetch('/api/send-status', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            userId: lineUserId,
+            userId: targetUserId,
             message
           })
         });
 
-        const directOaUrl = getDirectOaUrl(order, lineUserId);
+        const directOaUrl = getDirectOaUrl(order, targetUserId);
 
         if (response.ok) {
           const resData = await response.json();
@@ -535,7 +560,7 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
         }
       } catch (err: any) {
         // หากมี error ใดๆ เช่น เชื่อมต่อไม่ได้ ให้พาไปหน้าแชทตรงพร้อมสถานะที่ก๊อปปี้แล้ว
-        const directOaUrl = getDirectOaUrl(order, lineUserId);
+        const directOaUrl = getDirectOaUrl(order, targetUserId);
         alert(
           `📋 คัดลอกข้อความสถานะแล้ว!\n` +
           `(ระบบการแจ้งเตือนอัตโนมัติติดขัดชั่วคราว: ${err.message || err})\n` +
