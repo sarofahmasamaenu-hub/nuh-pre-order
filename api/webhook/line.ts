@@ -1,5 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "http";
 import crypto from "crypto";
+import fs from "fs";
+import path from "path";
 import {
   initDb,
   isPostgresActive,
@@ -15,6 +17,7 @@ const STATUS_MAP_TH: Record<string, { label: string; desc: string }> = {
   PATTERN_MAKING: { label: "สร้างแพทเทิร์น", desc: "สร้างแบบแพทเทิร์นตามสัดส่วนเฉพาะบุคคล" },
   CUTTING: { label: "3. ขึ้นแบบและตัดผ้า", desc: "ช่างตัดผ้าตามแพทเทิร์นเรียบร้อยแล้ว" },
   SEWING: { label: "4. กำลังเย็บประกอบ", desc: "ช่างกำลังเย็บขึ้นโครงชุดและเก็บรายละเอียด" },
+  PATTERN_SEWING: { label: "ทำแพทเทิร์น/ตัดเย็บ", desc: "กำลังสร้างแพทเทิร์นและเย็บประกอบชุด" },
   FIRST_FITTING_READY: { label: "พร้อมลองโครงชุด", desc: "โครงชุดพร้อมสำหรับการลองโครงครั้งที่ 1" },
   FIRST_FITTING_DONE: { label: "ลองโครงเรียบร้อย", desc: "ปรับแก้สัดส่วนตามผลการลองโครงชุด" },
   SECOND_FITTING_READY: { label: "พร้อมลองเก็บทรง", desc: "ชุดพร้อมสำหรับการลองเก็บทรงครั้งที่ 2" },
@@ -23,6 +26,7 @@ const STATUS_MAP_TH: Record<string, { label: string; desc: string }> = {
   HAND_FINISHING: { label: "สอยมือ/เก็บริม", desc: "เก็บรายละเอียดด้วยมือและงานฝีมือประณีต" },
   FITTING: { label: "5. ขั้นตอนฟิตติ้ง", desc: "นัดหมายลองชุดและปรับแต่งทรงตามรูปร่าง" },
   ALTERING: { label: "ปรับแก้ทรง", desc: "ช่างกำลังปรับแก้สัดส่วนตามที่นัดฟิตติ้ง" },
+  VERIFY_DETAILS: { label: "ตรวจสอบรายละเอียด", desc: "ตรวจสอบความถูกต้องของแบบชุดและสัดส่วน" },
   QUALITY_CHECK: { label: "ตรวจเช็กคุณภาพ (QC)", desc: "ตรวจสอบความประณีตของตะเข็บ ซิป และทรงชุด" },
   IRONING_PACKING: { label: "รีดอัดและแพ็กชุด", desc: "รีดไอน้ำจัดทรงชุดและแพ็กใส่ถุงคลุมเสื้อผ้า" },
   READY: { label: "6. พร้อมส่งมอบ/รับชุด", desc: "ชุดตัดเย็บเสร็จสมบูรณ์ 100% พร้อมนัดรับชุดหรือจัดส่ง" },
@@ -85,14 +89,29 @@ export default async function handler(req: any, res: any) {
     const proto = req.headers["x-forwarded-proto"] || "https";
     const baseAppUrl = `${proto}://${host}`;
 
-    // Read live orders from database if available
+    // Read live orders from database if available, or fallback to local orders.json
     let allOrders: any[] = [];
     if (isPostgresActive()) {
       try {
         await initDb().catch(() => {});
         allOrders = await getOrdersFromDb();
+        console.log(`[Vercel LINE Webhook] Loaded ${allOrders.length} orders from PostgreSQL database.`);
       } catch (dbErr) {
         console.error("[Vercel LINE Webhook] Database query error:", dbErr);
+      }
+    }
+
+    // Fallback to orders.json if database returned no orders or DB is inactive
+    if (!allOrders || allOrders.length === 0) {
+      try {
+        const localPath = path.join(process.cwd(), "orders.json");
+        if (fs.existsSync(localPath)) {
+          const raw = fs.readFileSync(localPath, "utf-8");
+          allOrders = JSON.parse(raw);
+          console.log(`[Vercel LINE Webhook] Loaded ${allOrders.length} orders from orders.json fallback.`);
+        }
+      } catch (fsErr) {
+        console.error("[Vercel LINE Webhook] orders.json read error:", fsErr);
       }
     }
 

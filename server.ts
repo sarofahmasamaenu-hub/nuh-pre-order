@@ -854,19 +854,36 @@ app.post(["/api/webhook/line", "/webhook/line", "/api/line/webhook", "/api/line-
           const order = matchedOrders[0];
           
           // Map Status codes to beautiful labels
-          const statusMapTH: Record<string, string> = {
-            RECEIVED: "รับออเดอร์เรียบร้อย (Received)",
-            DESIGNING: "กำลังออกแบบและจัดเตรียม (Designing)",
-            CUTTING: "ขึ้นแบบและตัดผ้า (Cutting)",
-            SEWING: "ขึ้นโครงและเย็บประกอบ (Sewing)",
-            FITTING: "ฟิตติ้งและปรับแต่งตัว (Fitting)",
-            READY: "ตัดเย็บเรียบร้อยพร้อมส่งมอบ (Ready)",
-            COMPLETED: "ส่งมอบสำเร็จเรียบร้อยแล้วค่ะ (Completed) 🎉"
+          const statusMapTH: Record<string, { label: string; desc: string }> = {
+            RECEIVED: { label: "1. รับออเดอร์เรียบร้อย", desc: "บันทึกข้อมูลและสัดส่วนเข้าระบบเรียบร้อยแล้ว" },
+            DESIGNING: { label: "2. สรุปแบบ/เตรียมผ้า", desc: "วางแพทเทิร์น ออกแบบ และเตรียมผ้าตัดเย็บ" },
+            FABRIC_ORDERED: { label: "สั่งผ้า/อะไหล่", desc: "อยู่ระหว่างรอผ้าหรืออุปกรณ์สั่งพิเศษ" },
+            FABRIC_RECEIVED: { label: "ได้รับผ้าแล้ว", desc: "ผ้าและอุปกรณ์จัดเตรียมครบถ้วน พร้อมขึ้นแบบ" },
+            PATTERN_MAKING: { label: "สร้างแพทเทิร์น", desc: "สร้างแบบแพทเทิร์นตามสัดส่วนเฉพาะบุคคล" },
+            CUTTING: { label: "3. ขึ้นแบบและตัดผ้า", desc: "ช่างตัดผ้าตามแพทเทิร์นเรียบร้อยแล้ว" },
+            SEWING: { label: "4. กำลังเย็บประกอบ", desc: "ช่างกำลังเย็บขึ้นโครงชุดและเก็บรายละเอียด" },
+            PATTERN_SEWING: { label: "ทำแพทเทิร์น/ตัดเย็บ", desc: "กำลังสร้างแพทเทิร์นและเย็บประกอบชุด" },
+            FIRST_FITTING_READY: { label: "พร้อมลองโครงชุด", desc: "โครงชุดพร้อมสำหรับการลองโครงครั้งที่ 1" },
+            FIRST_FITTING_DONE: { label: "ลองโครงเรียบร้อย", desc: "ปรับแก้สัดส่วนตามผลการลองโครงชุด" },
+            SECOND_FITTING_READY: { label: "พร้อมลองเก็บทรง", desc: "ชุดพร้อมสำหรับการลองเก็บทรงครั้งที่ 2" },
+            SECOND_FITTING_DONE: { label: "ลองเก็บทรงเรียบร้อย", desc: "ปรับแต่งสัดส่วนรอบสุดท้ายก่อนเก็บรายละเอียด" },
+            EMBROIDERY: { label: "งานปัก/ลูกไม้", desc: "อยู่ระหว่างงานปัก ประดับคริสตัล หรือติดลูกไม้" },
+            HAND_FINISHING: { label: "สอยมือ/เก็บริม", desc: "เก็บรายละเอียดด้วยมือและงานฝีมือประณีต" },
+            FITTING: { label: "5. ขั้นตอนฟิตติ้ง", desc: "นัดหมายลองชุดและปรับแต่งทรงตามรูปร่าง" },
+            ALTERING: { label: "ปรับแก้ทรง", desc: "ช่างกำลังปรับแก้สัดส่วนตามที่นัดฟิตติ้ง" },
+            VERIFY_DETAILS: { label: "ตรวจสอบรายละเอียด", desc: "ตรวจสอบความถูกต้องของแบบชุดและสัดส่วน" },
+            QUALITY_CHECK: { label: "ตรวจเช็กคุณภาพ (QC)", desc: "ตรวจสอบความประณีตของตะเข็บ ซิป และทรงชุด" },
+            IRONING_PACKING: { label: "รีดอัดและแพ็กชุด", desc: "รีดไอน้ำจัดทรงชุดและแพ็กใส่ถุงคลุมเสื้อผ้า" },
+            READY: { label: "6. พร้อมส่งมอบ/รับชุด", desc: "ชุดตัดเย็บเสร็จสมบูรณ์ 100% พร้อมนัดรับชุดหรือจัดส่ง" },
+            SHIPPED: { label: "จัดส่งพัสดุแล้ว", desc: "จัดส่งผ่านบริษัทขนส่งเรียบร้อยแล้ว" },
+            DELIVERED: { label: "พัสดุถึงผู้รับแล้ว", desc: "พัสดุจัดส่งถึงลูกค้าเรียบร้อยแล้ว" },
+            COMPLETED: { label: "7. ส่งมอบสำเร็จ 🎉", desc: "ลูกค้าตรวจรับชุดและเซ็นรับมอบเรียบร้อยแล้ว" },
+            CANCELLED: { label: "ยกเลิกออเดอร์", desc: "รายการออเดอร์นี้ถูกยกเลิก" }
           };
-          const statusLabel = statusMapTH[order.status] || order.status;
+          const stCfg = statusMapTH[order.status] || { label: order.status, desc: "กำลังดำเนินการ" };
 
           // Date display
-          let formattedDelivery = order.deliveryDate;
+          let formattedDelivery = order.deliveryDate || "-";
           try {
             formattedDelivery = new Date(order.deliveryDate).toLocaleDateString('th-TH', {
               day: 'numeric',
@@ -875,21 +892,46 @@ app.post(["/api/webhook/line", "/webhook/line", "/api/line/webhook", "/api/line-
             });
           } catch (e) {}
 
-          const lineUserIdParam = event.source?.userId ? `&lineUserId=${event.source.userId}` : '';
-          const portalUrl = `${baseAppUrl}?tab=customer&search=${order.customerPhone}&mode=customer${lineUserIdParam}`;
+          const price = Number(order.price || 0);
+          const deposit = Number(order.deposit || 0);
+          const discount = Number(order.discount || 0);
+          const finalPaid = Number(order.finalPaymentAmount || 0);
+          const unpaid = Math.max(0, price - deposit - discount - finalPaid);
 
-          replyMessage = `⚜️ อัปเดตสถานะชุดสั่งตัด NUNUH Boutique ⚜️\n\nเรียนคุณ: ${order.customerName}\nรหัสออเดอร์: ${order.orderNumber}\nประเภทชุด: ${order.dressType}\n\n📍 สถานะปัจจุบัน: [${statusLabel}]\n📅 กำหนดส่งมอบ: ${formattedDelivery}\n\nท่านสามารถเปิดดูข้อมูลใบรับออเดอร์ รายละเอียดสัดส่วน และประวัติการชำระเงินมัดจำแบบละเอียดด้วยตนเองได้ที่นี่ค่ะ:\n🔗 ${portalUrl}\n\nหากท่านต้องการติดต่อพนักงานเพิ่มเติม สามารถพิมพ์ข้อความทิ้งไว้ในแชทนี้ได้เลยนะคะ ✨`;
+          const lineUserIdParam = event.source?.userId ? `&lineUserId=${event.source.userId}` : '';
+          const portalUrl = `${baseAppUrl}/?mode=customer&search=${encodeURIComponent(order.customerPhone || order.orderNumber)}${lineUserIdParam}`;
+
+          replyMessage = `⚜️ อัปเดตสถานะชุดสั่งตัด NUNUH Boutique ⚜️\n\n` +
+            `👤 เรียนคุณ: ${order.customerName}${order.customerNickname ? ` (${order.customerNickname})` : ""}\n` +
+            `🧾 รหัสออเดอร์: ${order.orderNumber}\n` +
+            `👗 แบบชุด: ${order.dressType}\n` +
+            `🧵 ชนิดผ้า: ${order.fabricType || "ตามที่ระบุ"} (${order.fabricColor || "-"})\n\n` +
+            `📍 สถานะปัจจุบัน: [${stCfg.label}]\n` +
+            `ℹ️ รายละเอียด: "${stCfg.desc}"\n` +
+            `📅 วันที่อัปเดตสถานะ: ${order.statusDate || order.orderDate || "-"}\n` +
+            `⏳ กำหนดส่งมอบ: ${formattedDelivery}\n\n` +
+            `💰 ข้อมูลยอดเงิน:\n` +
+            `• ราคารวม: ${price.toLocaleString()} บาท\n` +
+            `• มัดจำแล้ว: ${deposit.toLocaleString()} บาท\n` +
+            (unpaid === 0 ? `• สถานะชำระ: ชำระครบถ้วนแล้ว ✓\n\n` : `• ยอดคงเหลือวันรับชุด: ${unpaid.toLocaleString()} บาท\n\n`) +
+            `🔗 ตรวจสอบรายละเอียด สัดส่วน และติดตามงานตัดเย็บด้วยตนเองได้ที่นี่ค่ะ:\n` +
+            `${portalUrl}\n\n` +
+            `หากท่านต้องการสอบถามข้อมูลเพิ่มเติม สามารถพิมพ์ข้อความทิ้งไว้ในแชทนี้ได้เลยนะคะ ✨`;
         } else {
           // Multiple orders matched
           let listText = "";
           matchedOrders.slice(0, 5).forEach((order: any, idx: number) => {
-            listText += `${idx + 1}. คุณ ${order.customerName} - ออเดอร์ ${order.orderNumber} (${order.dressType})\n`;
+            const stCfg = (statusMapTH as any)?.[order.status] || { label: order.status };
+            listText += `${idx + 1}. ออเดอร์ ${order.orderNumber} (${order.dressType})\n   📍 สถานะ: [${stCfg.label || order.status}]\n`;
           });
           
           const lineUserIdParam = event.source?.userId ? `&lineUserId=${event.source.userId}` : '';
-          const portalUrl = `${baseAppUrl}?tab=customer&search=${matchedOrders[0].customerPhone}&mode=customer${lineUserIdParam}`;
+          const portalUrl = `${baseAppUrl}/?mode=customer&search=${encodeURIComponent(matchedOrders[0].customerPhone || matchedOrders[0].orderNumber)}${lineUserIdParam}`;
 
-          replyMessage = `⚜️ พบข้อมูลที่เกี่ยวข้องทั้งหมด ${matchedOrders.length} ออเดอร์ค่ะ:\n\n${listText}\nคุณสามารถเลือกเปิดดูรายละเอียด สัดส่วน และสถานะของทุกออเดอร์ได้ที่ลิงก์นี้เลยค่ะ:\n🔗 ${portalUrl}\n\nขอบพระคุณค่ะ 💖`;
+          replyMessage = `⚜️ พบรายการสั่งตัดของคุณทั้งหมด ${matchedOrders.length} ออเดอร์ค่ะ:\n\n${listText}\n` +
+            `🔗 เปิดดูรายละเอียด สัดส่วน และสถานะทุกออเดอร์ได้ที่ลิงก์นี้เลยค่ะ:\n` +
+            `${portalUrl}\n\n` +
+            `ขอบพระคุณที่ไว้วางใจ NUNUH Boutique ค่ะ 💖`;
         }
 
         // Send Reply via LINE messaging API
