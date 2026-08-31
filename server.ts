@@ -78,6 +78,33 @@ const SETTINGS_FILE = path.join(process.cwd(), 'settings.json');
 const REVIEWS_FILE = path.join(process.cwd(), 'reviews.json');
 let lastKnownPublicUrl = "";
 
+const STATUS_MAP_TH: Record<string, { label: string; desc: string }> = {
+  RECEIVED: { label: "1. รับออเดอร์เรียบร้อย", desc: "บันทึกข้อมูลและสัดส่วนเข้าระบบเรียบร้อยแล้ว" },
+  DESIGNING: { label: "2. สรุปแบบ/เตรียมผ้า", desc: "วางแพทเทิร์น ออกแบบ และเตรียมผ้าตัดเย็บ" },
+  FABRIC_ORDERED: { label: "สั่งผ้า/อะไหล่", desc: "อยู่ระหว่างรอผ้าหรืออุปกรณ์สั่งพิเศษ" },
+  FABRIC_RECEIVED: { label: "ได้รับผ้าแล้ว", desc: "ผ้าและอุปกรณ์จัดเตรียมครบถ้วน พร้อมขึ้นแบบ" },
+  PATTERN_MAKING: { label: "สร้างแพทเทิร์น", desc: "สร้างแบบแพทเทิร์นตามสัดส่วนเฉพาะบุคคล" },
+  CUTTING: { label: "3. ขึ้นแบบและตัดผ้า", desc: "ช่างตัดผ้าตามแพทเทิร์นเรียบร้อยแล้ว" },
+  SEWING: { label: "4. กำลังเย็บประกอบ", desc: "ช่างกำลังเย็บขึ้นโครงชุดและเก็บรายละเอียด" },
+  PATTERN_SEWING: { label: "ทำแพทเทิร์น/ตัดเย็บ", desc: "กำลังสร้างแพทเทิร์นและเย็บประกอบชุด" },
+  FIRST_FITTING_READY: { label: "พร้อมลองโครงชุด", desc: "โครงชุดพร้อมสำหรับการลองโครงครั้งที่ 1" },
+  FIRST_FITTING_DONE: { label: "ลองโครงเรียบร้อย", desc: "ปรับแก้สัดส่วนตามผลการลองโครงชุด" },
+  SECOND_FITTING_READY: { label: "พร้อมลองเก็บทรง", desc: "ชุดพร้อมสำหรับการลองเก็บทรงครั้งที่ 2" },
+  SECOND_FITTING_DONE: { label: "ลองเก็บทรงเรียบร้อย", desc: "ปรับแต่งสัดส่วนรอบสุดท้ายก่อนเก็บรายละเอียด" },
+  EMBROIDERY: { label: "งานปัก/ลูกไม้", desc: "อยู่ระหว่างงานปัก ประดับคริสตัล หรือติดลูกไม้" },
+  HAND_FINISHING: { label: "สอยมือ/เก็บริม", desc: "เก็บรายละเอียดด้วยมือและงานฝีมือประณีต" },
+  FITTING: { label: "5. ขั้นตอนฟิตติ้ง", desc: "นัดหมายลองชุดและปรับแต่งทรงตามรูปร่าง" },
+  ALTERING: { label: "ปรับแก้ทรง", desc: "ช่างกำลังปรับแก้สัดส่วนตามที่นัดฟิตติ้ง" },
+  VERIFY_DETAILS: { label: "ตรวจสอบรายละเอียด", desc: "ตรวจสอบความถูกต้องของแบบชุดและสัดส่วน" },
+  QUALITY_CHECK: { label: "ตรวจเช็กคุณภาพ (QC)", desc: "ตรวจสอบความประณีตของตะเข็บ ซิป และทรงชุด" },
+  IRONING_PACKING: { label: "รีดอัดและแพ็กชุด", desc: "รีดไอน้ำจัดทรงชุดและแพ็กใส่ถุงคลุมเสื้อผ้า" },
+  READY: { label: "6. พร้อมส่งมอบ/รับชุด", desc: "ชุดตัดเย็บเสร็จสมบูรณ์ 100% พร้อมนัดรับชุดหรือจัดส่ง" },
+  SHIPPED: { label: "จัดส่งพัสดุแล้ว", desc: "จัดส่งผ่านบริษัทขนส่งเรียบร้อยแล้ว" },
+  DELIVERED: { label: "พัสดุถึงผู้รับแล้ว", desc: "พัสดุจัดส่งถึงลูกค้าเรียบร้อยแล้ว" },
+  COMPLETED: { label: "7. ส่งมอบสำเร็จ 🎉", desc: "ลูกค้าตรวจรับชุดและเซ็นรับมอบเรียบร้อยแล้ว" },
+  CANCELLED: { label: "ยกเลิกออเดอร์", desc: "รายการออเดอร์นี้ถูกยกเลิก" }
+};
+
 // Helper to read orders from PostgreSQL with fallback to file
 async function readOrdersOnServer(): Promise<any[]> {
   if (isPostgresActive()) {
@@ -785,31 +812,52 @@ app.post(["/api/webhook/line", "/webhook/line", "/api/line/webhook", "/api/line-
         const extractedPhone = phoneMatch ? phoneMatch[0] : "";
         const extractedOrderNum = orderNumMatch ? orderNumMatch[0].replace(/-/g, "").toLowerCase() : "";
 
+        // Normalize text by removing common Thai titles/prefixes (e.g. คุณ, นาง, น.ส., นางสาว, ด.ญ., ด.ช., พี่, น้อง)
+        const strippedTitleText = text.replace(/^(คุณ|นางสาว|น\.ส\.|นาง|นาย|ด\.ญ\.|ด\.ช\.|พี่|น้อง)\s*/i, "").trim();
+        const cleanStrippedTitle = strippedTitleText.replace(/[- \s\t\n]/g, "");
+
         const matchedOrders = orders.filter((o: any) => {
           if (!o) return false;
           const phoneClean = (o.customerPhone || "").replace(/[- \s]/g, "");
           const orderNumClean = (o.orderNumber || "").replace(/[- \s]/g, "").toLowerCase();
           const nameClean = (o.customerName || "").toLowerCase();
+          const nameCleanNoTitle = nameClean.replace(/^(คุณ|นางสาว|น\.ส\.|นาง|นาย|ด\.ญ\.|ด\.ช\.|พี่|น้อง)\s*/i, "").trim();
+          const nameNoSpaces = nameCleanNoTitle.replace(/[- \s\t\n]/g, "");
           const nicknameClean = (o.customerNickname || "").toLowerCase();
           const lineUid = (o.lineUserId || "").toLowerCase();
 
+          // Phone matching
           const matchesPhone = extractedPhone && phoneClean.includes(extractedPhone);
-          const matchesExtractedOrder = extractedOrderNum && orderNumClean.includes(extractedOrderNum);
           const matchesCleanSearchPhone = cleanSearchText.length >= 4 && phoneClean.includes(cleanSearchText);
+          
+          // Order number matching
+          const matchesExtractedOrder = extractedOrderNum && orderNumClean.includes(extractedOrderNum);
           const matchesCleanSearchOrder = cleanSearchText.length >= 3 && orderNumClean.includes(cleanSearchText);
           
-          // Match by tokens if multiple words provided
+          // Direct name matching
+          const matchesDirectName = nameClean.includes(text) || (nameCleanNoTitle && nameCleanNoTitle.includes(strippedTitleText));
+          const matchesNickname = (nicknameClean && (nicknameClean.includes(text) || nicknameClean.includes(strippedTitleText) || text.includes(nicknameClean)));
+          const matchesNoSpaceName = cleanStrippedTitle.length >= 2 && nameNoSpaces.includes(cleanStrippedTitle);
+          
+          // Word tokens matching (e.g. first name or last name match)
           const words = text.split(/\s+/).filter((w: string) => w.length >= 2);
-          const matchesNameWords = words.length > 0 && words.some((w: string) => nameClean.includes(w) || nicknameClean.includes(w));
-          const matchesDirectName = nameClean.includes(text) || (nicknameClean && nicknameClean.includes(text));
+          const matchesNameWords = words.length > 0 && words.some((w: string) => 
+            nameClean.includes(w) || 
+            nameCleanNoTitle.includes(w) || 
+            (nicknameClean && nicknameClean.includes(w))
+          );
+          
+          // Line user ID matching
           const matchesLineUid = event.source?.userId && lineUid === event.source.userId.toLowerCase();
 
           return (
             matchesPhone ||
-            matchesExtractedOrder ||
             matchesCleanSearchPhone ||
+            matchesExtractedOrder ||
             matchesCleanSearchOrder ||
             matchesDirectName ||
+            matchesNickname ||
+            matchesNoSpaceName ||
             matchesNameWords ||
             matchesLineUid
           );
@@ -852,35 +900,7 @@ app.post(["/api/webhook/line", "/webhook/line", "/api/line/webhook", "/api/line-
           }
         } else if (matchedOrders.length === 1) {
           const order = matchedOrders[0];
-          
-          // Map Status codes to beautiful labels
-          const statusMapTH: Record<string, { label: string; desc: string }> = {
-            RECEIVED: { label: "1. รับออเดอร์เรียบร้อย", desc: "บันทึกข้อมูลและสัดส่วนเข้าระบบเรียบร้อยแล้ว" },
-            DESIGNING: { label: "2. สรุปแบบ/เตรียมผ้า", desc: "วางแพทเทิร์น ออกแบบ และเตรียมผ้าตัดเย็บ" },
-            FABRIC_ORDERED: { label: "สั่งผ้า/อะไหล่", desc: "อยู่ระหว่างรอผ้าหรืออุปกรณ์สั่งพิเศษ" },
-            FABRIC_RECEIVED: { label: "ได้รับผ้าแล้ว", desc: "ผ้าและอุปกรณ์จัดเตรียมครบถ้วน พร้อมขึ้นแบบ" },
-            PATTERN_MAKING: { label: "สร้างแพทเทิร์น", desc: "สร้างแบบแพทเทิร์นตามสัดส่วนเฉพาะบุคคล" },
-            CUTTING: { label: "3. ขึ้นแบบและตัดผ้า", desc: "ช่างตัดผ้าตามแพทเทิร์นเรียบร้อยแล้ว" },
-            SEWING: { label: "4. กำลังเย็บประกอบ", desc: "ช่างกำลังเย็บขึ้นโครงชุดและเก็บรายละเอียด" },
-            PATTERN_SEWING: { label: "ทำแพทเทิร์น/ตัดเย็บ", desc: "กำลังสร้างแพทเทิร์นและเย็บประกอบชุด" },
-            FIRST_FITTING_READY: { label: "พร้อมลองโครงชุด", desc: "โครงชุดพร้อมสำหรับการลองโครงครั้งที่ 1" },
-            FIRST_FITTING_DONE: { label: "ลองโครงเรียบร้อย", desc: "ปรับแก้สัดส่วนตามผลการลองโครงชุด" },
-            SECOND_FITTING_READY: { label: "พร้อมลองเก็บทรง", desc: "ชุดพร้อมสำหรับการลองเก็บทรงครั้งที่ 2" },
-            SECOND_FITTING_DONE: { label: "ลองเก็บทรงเรียบร้อย", desc: "ปรับแต่งสัดส่วนรอบสุดท้ายก่อนเก็บรายละเอียด" },
-            EMBROIDERY: { label: "งานปัก/ลูกไม้", desc: "อยู่ระหว่างงานปัก ประดับคริสตัล หรือติดลูกไม้" },
-            HAND_FINISHING: { label: "สอยมือ/เก็บริม", desc: "เก็บรายละเอียดด้วยมือและงานฝีมือประณีต" },
-            FITTING: { label: "5. ขั้นตอนฟิตติ้ง", desc: "นัดหมายลองชุดและปรับแต่งทรงตามรูปร่าง" },
-            ALTERING: { label: "ปรับแก้ทรง", desc: "ช่างกำลังปรับแก้สัดส่วนตามที่นัดฟิตติ้ง" },
-            VERIFY_DETAILS: { label: "ตรวจสอบรายละเอียด", desc: "ตรวจสอบความถูกต้องของแบบชุดและสัดส่วน" },
-            QUALITY_CHECK: { label: "ตรวจเช็กคุณภาพ (QC)", desc: "ตรวจสอบความประณีตของตะเข็บ ซิป และทรงชุด" },
-            IRONING_PACKING: { label: "รีดอัดและแพ็กชุด", desc: "รีดไอน้ำจัดทรงชุดและแพ็กใส่ถุงคลุมเสื้อผ้า" },
-            READY: { label: "6. พร้อมส่งมอบ/รับชุด", desc: "ชุดตัดเย็บเสร็จสมบูรณ์ 100% พร้อมนัดรับชุดหรือจัดส่ง" },
-            SHIPPED: { label: "จัดส่งพัสดุแล้ว", desc: "จัดส่งผ่านบริษัทขนส่งเรียบร้อยแล้ว" },
-            DELIVERED: { label: "พัสดุถึงผู้รับแล้ว", desc: "พัสดุจัดส่งถึงลูกค้าเรียบร้อยแล้ว" },
-            COMPLETED: { label: "7. ส่งมอบสำเร็จ 🎉", desc: "ลูกค้าตรวจรับชุดและเซ็นรับมอบเรียบร้อยแล้ว" },
-            CANCELLED: { label: "ยกเลิกออเดอร์", desc: "รายการออเดอร์นี้ถูกยกเลิก" }
-          };
-          const stCfg = statusMapTH[order.status] || { label: order.status, desc: "กำลังดำเนินการ" };
+          const stCfg = STATUS_MAP_TH[order.status] || { label: order.status, desc: "กำลังดำเนินการ" };
 
           // Date display
           let formattedDelivery = order.deliveryDate || "-";
@@ -921,7 +941,7 @@ app.post(["/api/webhook/line", "/webhook/line", "/api/line/webhook", "/api/line-
           // Multiple orders matched
           let listText = "";
           matchedOrders.slice(0, 5).forEach((order: any, idx: number) => {
-            const stCfg = (statusMapTH as any)?.[order.status] || { label: order.status };
+            const stCfg = STATUS_MAP_TH[order.status] || { label: order.status, desc: "" };
             listText += `${idx + 1}. ออเดอร์ ${order.orderNumber} (${order.dressType})\n   📍 สถานะ: [${stCfg.label || order.status}]\n`;
           });
           

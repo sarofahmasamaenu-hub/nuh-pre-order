@@ -131,31 +131,47 @@ export default async function handler(req: any, res: any) {
         const extractedPhone = phoneMatch ? phoneMatch[0] : "";
         const extractedOrderNum = orderNumMatch ? orderNumMatch[0].replace(/-/g, "").toLowerCase() : "";
 
+        // Normalize text by removing common Thai titles/prefixes (e.g. คุณ, นาง, น.ส., นางสาว, ด.ญ., ด.ช., พี่, น้อง)
+        const strippedTitleText = text.replace(/^(คุณ|นางสาว|น\.ส\.|นาง|นาย|ด\.ญ\.|ด\.ช\.|พี่|น้อง)\s*/i, "").trim();
+        const cleanStrippedTitle = strippedTitleText.replace(/[- \s\t\n]/g, "");
+
         const matchedOrders = allOrders.filter((order: any) => {
           if (!order) return false;
           const phone = (order.customerPhone || "").replace(/[-\s]/g, "").toLowerCase();
           const orderNum = (order.orderNumber || "").replace(/[-\s]/g, "").toLowerCase();
           const name = (order.customerName || "").toLowerCase();
+          const nameNoTitle = name.replace(/^(คุณ|นางสาว|น\.ส\.|นาง|นาย|ด\.ญ\.|ด\.ช\.|พี่|น้อง)\s*/i, "").trim();
+          const nameNoSpaces = nameNoTitle.replace(/[- \s\t\n]/g, "");
           const nickname = (order.customerNickname || "").toLowerCase();
           const extId = (order.externalOrderId || "").toLowerCase();
           const lineUid = (order.lineUserId || "").toLowerCase();
 
           const matchesPhone = extractedPhone && phone.includes(extractedPhone);
-          const matchesExtractedOrder = extractedOrderNum && orderNum.includes(extractedOrderNum);
           const matchesCleanPhone = cleanSearch.length >= 4 && phone.includes(cleanSearch);
+          const matchesExtractedOrder = extractedOrderNum && orderNum.includes(extractedOrderNum);
           const matchesCleanOrder = cleanSearch.length >= 3 && orderNum.includes(cleanSearch);
 
+          const matchesDirectName = name.includes(text) || (nameNoTitle && nameNoTitle.includes(strippedTitleText));
+          const matchesNickname = nickname && (nickname.includes(text) || nickname.includes(strippedTitleText) || text.includes(nickname));
+          const matchesNoSpaceName = cleanStrippedTitle.length >= 2 && nameNoSpaces.includes(cleanStrippedTitle);
+
           const words = text.split(/\s+/).filter((w: string) => w.length >= 2);
-          const matchesNameWords = words.length > 0 && words.some((w: string) => name.includes(w) || nickname.includes(w));
-          const matchesDirectName = name.includes(text) || (nickname && nickname.includes(text));
+          const matchesNameWords = words.length > 0 && words.some((w: string) => 
+            name.includes(w) || 
+            nameNoTitle.includes(w) || 
+            (nickname && nickname.includes(w))
+          );
+          
           const matchesLineUid = userId && lineUid === userId.toLowerCase();
 
           return (
             matchesPhone ||
-            matchesExtractedOrder ||
             matchesCleanPhone ||
+            matchesExtractedOrder ||
             matchesCleanOrder ||
             matchesDirectName ||
+            matchesNickname ||
+            matchesNoSpaceName ||
             matchesNameWords ||
             matchesLineUid ||
             (cleanSearch.length >= 3 && extId.includes(cleanSearch))
