@@ -1,0 +1,6 @@
+{
+  "name": "NUNUH",
+  "description": "ระบบจัดการออเดอร์ร้านตัดเย็บเสื้อผ้า NUNUH พร้อมฟังก์ชันติดตามสถานะ ตารางจัดส่ง และแนะนำแบบชุดสำหรับลูกค้า",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
