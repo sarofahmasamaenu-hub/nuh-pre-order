@@ -106,7 +106,12 @@ export default async function handler(req: any, res: any) {
 
         const cleanSearch = text.replace(/[-\s]/g, "");
 
-        // Search in real-time orders
+        // Search in real-time orders with smart regex extraction
+        const phoneMatch = originalText.match(/0\d{8,9}/);
+        const orderNumMatch = originalText.match(/NU-?\d{4,6}/i);
+        const extractedPhone = phoneMatch ? phoneMatch[0] : "";
+        const extractedOrderNum = orderNumMatch ? orderNumMatch[0].replace(/-/g, "").toLowerCase() : "";
+
         const matchedOrders = allOrders.filter((order: any) => {
           if (!order) return false;
           const phone = (order.customerPhone || "").replace(/[-\s]/g, "").toLowerCase();
@@ -116,13 +121,25 @@ export default async function handler(req: any, res: any) {
           const extId = (order.externalOrderId || "").toLowerCase();
           const lineUid = (order.lineUserId || "").toLowerCase();
 
+          const matchesPhone = extractedPhone && phone.includes(extractedPhone);
+          const matchesExtractedOrder = extractedOrderNum && orderNum.includes(extractedOrderNum);
+          const matchesCleanPhone = cleanSearch.length >= 4 && phone.includes(cleanSearch);
+          const matchesCleanOrder = cleanSearch.length >= 3 && orderNum.includes(cleanSearch);
+
+          const words = text.split(/\s+/).filter((w: string) => w.length >= 2);
+          const matchesNameWords = words.length > 0 && words.some((w: string) => name.includes(w) || nickname.includes(w));
+          const matchesDirectName = name.includes(text) || (nickname && nickname.includes(text));
+          const matchesLineUid = userId && lineUid === userId.toLowerCase();
+
           return (
-            (cleanSearch.length >= 3 && phone.includes(cleanSearch)) ||
-            (cleanSearch.length >= 3 && orderNum.includes(cleanSearch)) ||
-            (cleanSearch.length >= 2 && name.includes(text)) ||
-            (cleanSearch.length >= 2 && nickname.includes(text)) ||
-            (cleanSearch.length >= 3 && extId.includes(cleanSearch)) ||
-            (userId && lineUid === userId.toLowerCase())
+            matchesPhone ||
+            matchesExtractedOrder ||
+            matchesCleanPhone ||
+            matchesCleanOrder ||
+            matchesDirectName ||
+            matchesNameWords ||
+            matchesLineUid ||
+            (cleanSearch.length >= 3 && extId.includes(cleanSearch))
           );
         });
 

@@ -777,17 +777,41 @@ app.post(["/api/webhook/line", "/webhook/line", "/api/line/webhook", "/api/line-
 
         // Lookup Orders on Server
         const orders = await readOrdersOnServer();
-        const cleanSearchText = text.replace(/[- \s]/g, ""); // Strip hyphens & spaces
+        const cleanSearchText = text.replace(/[- \s\t\n]/g, ""); // Strip hyphens & spaces
+
+        // Extract phone numbers or order numbers from incoming text
+        const phoneMatch = originalText.match(/0\d{8,9}/);
+        const orderNumMatch = originalText.match(/NU-?\d{4,6}/i);
+        const extractedPhone = phoneMatch ? phoneMatch[0] : "";
+        const extractedOrderNum = orderNumMatch ? orderNumMatch[0].replace(/-/g, "").toLowerCase() : "";
 
         const matchedOrders = orders.filter((o: any) => {
+          if (!o) return false;
           const phoneClean = (o.customerPhone || "").replace(/[- \s]/g, "");
           const orderNumClean = (o.orderNumber || "").replace(/[- \s]/g, "").toLowerCase();
           const nameClean = (o.customerName || "").toLowerCase();
+          const nicknameClean = (o.customerNickname || "").toLowerCase();
+          const lineUid = (o.lineUserId || "").toLowerCase();
+
+          const matchesPhone = extractedPhone && phoneClean.includes(extractedPhone);
+          const matchesExtractedOrder = extractedOrderNum && orderNumClean.includes(extractedOrderNum);
+          const matchesCleanSearchPhone = cleanSearchText.length >= 4 && phoneClean.includes(cleanSearchText);
+          const matchesCleanSearchOrder = cleanSearchText.length >= 3 && orderNumClean.includes(cleanSearchText);
+          
+          // Match by tokens if multiple words provided
+          const words = text.split(/\s+/).filter((w: string) => w.length >= 2);
+          const matchesNameWords = words.length > 0 && words.some((w: string) => nameClean.includes(w) || nicknameClean.includes(w));
+          const matchesDirectName = nameClean.includes(text) || (nicknameClean && nicknameClean.includes(text));
+          const matchesLineUid = event.source?.userId && lineUid === event.source.userId.toLowerCase();
 
           return (
-            (cleanSearchText.length >= 4 && phoneClean.includes(cleanSearchText)) ||
-            orderNumClean.includes(text) ||
-            nameClean.includes(text)
+            matchesPhone ||
+            matchesExtractedOrder ||
+            matchesCleanSearchPhone ||
+            matchesCleanSearchOrder ||
+            matchesDirectName ||
+            matchesNameWords ||
+            matchesLineUid
           );
         });
 
