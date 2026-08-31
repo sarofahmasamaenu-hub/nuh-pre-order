@@ -1,9 +1,39 @@
 import type { IncomingMessage, ServerResponse } from "http";
 import crypto from "crypto";
+import {
+  initDb,
+  isPostgresActive,
+  getOrdersFromDb,
+  saveOrderToDb
+} from "../../db";
 
-// Vercel Serverless Function for LINE Messaging API Webhook
+const STATUS_MAP_TH: Record<string, { label: string; desc: string }> = {
+  RECEIVED: { label: "1. รับออเดอร์เรียบร้อย", desc: "บันทึกข้อมูลและสัดส่วนเข้าระบบเรียบร้อยแล้ว" },
+  DESIGNING: { label: "2. สรุปแบบ/เตรียมผ้า", desc: "วางแพทเทิร์น ออกแบบ และเตรียมผ้าตัดเย็บ" },
+  FABRIC_ORDERED: { label: "สั่งผ้า/อะไหล่", desc: "อยู่ระหว่างรอผ้าหรืออุปกรณ์สั่งพิเศษ" },
+  FABRIC_RECEIVED: { label: "ได้รับผ้าแล้ว", desc: "ผ้าและอุปกรณ์จัดเตรียมครบถ้วน พร้อมขึ้นแบบ" },
+  PATTERN_MAKING: { label: "สร้างแพทเทิร์น", desc: "สร้างแบบแพทเทิร์นตามสัดส่วนเฉพาะบุคคล" },
+  CUTTING: { label: "3. ขึ้นแบบและตัดผ้า", desc: "ช่างตัดผ้าตามแพทเทิร์นเรียบร้อยแล้ว" },
+  SEWING: { label: "4. กำลังเย็บประกอบ", desc: "ช่างกำลังเย็บขึ้นโครงชุดและเก็บรายละเอียด" },
+  FIRST_FITTING_READY: { label: "พร้อมลองโครงชุด", desc: "โครงชุดพร้อมสำหรับการลองโครงครั้งที่ 1" },
+  FIRST_FITTING_DONE: { label: "ลองโครงเรียบร้อย", desc: "ปรับแก้สัดส่วนตามผลการลองโครงชุด" },
+  SECOND_FITTING_READY: { label: "พร้อมลองเก็บทรง", desc: "ชุดพร้อมสำหรับการลองเก็บทรงครั้งที่ 2" },
+  SECOND_FITTING_DONE: { label: "ลองเก็บทรงเรียบร้อย", desc: "ปรับแต่งสัดส่วนรอบสุดท้ายก่อนเก็บรายละเอียด" },
+  EMBROIDERY: { label: "งานปัก/ลูกไม้", desc: "อยู่ระหว่างงานปัก ประดับคริสตัล หรือติดลูกไม้" },
+  HAND_FINISHING: { label: "สอยมือ/เก็บริม", desc: "เก็บรายละเอียดด้วยมือและงานฝีมือประณีต" },
+  FITTING: { label: "5. ขั้นตอนฟิตติ้ง", desc: "นัดหมายลองชุดและปรับแต่งทรงตามรูปร่าง" },
+  ALTERING: { label: "ปรับแก้ทรง", desc: "ช่างกำลังปรับแก้สัดส่วนตามที่นัดฟิตติ้ง" },
+  QUALITY_CHECK: { label: "ตรวจเช็กคุณภาพ (QC)", desc: "ตรวจสอบความประณีตของตะเข็บ ซิป และทรงชุด" },
+  IRONING_PACKING: { label: "รีดอัดและแพ็กชุด", desc: "รีดไอน้ำจัดทรงชุดและแพ็กใส่ถุงคลุมเสื้อผ้า" },
+  READY: { label: "6. พร้อมส่งมอบ/รับชุด", desc: "ชุดตัดเย็บเสร็จสมบูรณ์ 100% พร้อมนัดรับชุดหรือจัดส่ง" },
+  SHIPPED: { label: "จัดส่งพัสดุแล้ว", desc: "จัดส่งผ่านบริษัทขนส่งเรียบร้อยแล้ว" },
+  DELIVERED: { label: "พัสดุถึงผู้รับแล้ว", desc: "พัสดุจัดส่งถึงลูกค้าเรียบร้อยแล้ว" },
+  COMPLETED: { label: "7. ส่งมอบสำเร็จ 🎉", desc: "ลูกค้าตรวจรับชุดและเซ็นรับมอบเรียบร้อยแล้ว" },
+  CANCELLED: { label: "ยกเลิกออเดอร์", desc: "รายการออเดอร์นี้ถูกยกเลิก" }
+};
+
 export default async function handler(req: any, res: any) {
-  // Allow CORS / preflight if needed
+  // Allow CORS
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, x-line-signature");
@@ -12,14 +42,14 @@ export default async function handler(req: any, res: any) {
     return res.status(200).end();
   }
 
-  // Support GET request for simple browser verification test
+  // GET route for testing / health check
   if (req.method === "GET") {
     return res.status(200).json({
       status: "ok",
       message: "LINE Webhook endpoint is active and ready for Messaging API events on Vercel.",
       hasToken: Boolean(process.env.LINE_CHANNEL_ACCESS_TOKEN),
       hasSecret: Boolean(process.env.LINE_CHANNEL_SECRET),
-      hasGemini: Boolean(process.env.GEMINI_API_KEY)
+      hasDatabase: isPostgresActive()
     });
   }
 
@@ -35,7 +65,7 @@ export default async function handler(req: any, res: any) {
     const body = req.body || {};
     const events = body.events || [];
 
-    console.log(`[Vercel Webhook] Received LINE request with ${events.length} event(s)`);
+    console.log(`[Vercel LINE Webhook] Processing ${events.length} event(s)`);
 
     // Verify signature if secret is provided
     if (LINE_CHANNEL_SECRET && signature) {
@@ -46,47 +76,165 @@ export default async function handler(req: any, res: any) {
         .digest("base64");
 
       if (hash !== signature) {
-        console.warn("[Vercel Webhook] Signature mismatch warning");
+        console.warn("[Vercel LINE Webhook] Signature verification mismatch warning");
       }
     }
 
-    // Process events asynchronously
+    // Determine public URL for customer portal
+    const host = req.headers["x-forwarded-host"] || req.headers.host || "to-do-list-two-lovat.vercel.app";
+    const proto = req.headers["x-forwarded-proto"] || "https";
+    const baseAppUrl = `${proto}://${host}`;
+
+    // Read live orders from database if available
+    let allOrders: any[] = [];
+    if (isPostgresActive()) {
+      try {
+        await initDb().catch(() => {});
+        allOrders = await getOrdersFromDb();
+      } catch (dbErr) {
+        console.error("[Vercel LINE Webhook] Database query error:", dbErr);
+      }
+    }
+
+    // Process each incoming event
     for (const event of events) {
       if (event.type === "message" && event.message?.type === "text") {
         const replyToken = event.replyToken;
         const originalText = (event.message.text || "").trim();
         const text = originalText.toLowerCase();
+        const userId = event.source?.userId || "";
 
-        let replyMessage = `สวัสดีค่ะคุณลูกค้า ⚜️ NUNUH Boutique ⚜️ ยินดีให้บริการค่ะ\n\n📌 วิธีการตรวจสอบสถานะออเดอร์อัตโนมัติ:\n• พิมพ์ เบอร์โทรศัพท์ ที่แจ้งไว้ตอนวัดตัว (เช่น 086-555-1234)\n• หรือพิมพ์ เลขที่ออเดอร์ (เช่น NU-26008)\n\nระบบจะส่งลิงก์ติดตามงานให้ท่านตรวจสอบรายละเอียด สัดส่วน และสถานะชุดได้ทันทีเลยค่ะ ✨`;
+        const cleanSearch = text.replace(/[-\s]/g, "");
 
-        // If Gemini API is available, generate smart reply for non-search greetings
-        if (process.env.GEMINI_API_KEY && !/^[0-9-+\s]{6,}$/.test(text) && !text.startsWith("nu-") && !text.startsWith("nn-")) {
+        // Search in real-time orders
+        const matchedOrders = allOrders.filter((order: any) => {
+          if (!order) return false;
+          const phone = (order.customerPhone || "").replace(/[-\s]/g, "").toLowerCase();
+          const orderNum = (order.orderNumber || "").replace(/[-\s]/g, "").toLowerCase();
+          const name = (order.customerName || "").toLowerCase();
+          const nickname = (order.customerNickname || "").toLowerCase();
+          const extId = (order.externalOrderId || "").toLowerCase();
+          const lineUid = (order.lineUserId || "").toLowerCase();
+
+          return (
+            (cleanSearch.length >= 3 && phone.includes(cleanSearch)) ||
+            (cleanSearch.length >= 3 && orderNum.includes(cleanSearch)) ||
+            (cleanSearch.length >= 2 && name.includes(text)) ||
+            (cleanSearch.length >= 2 && nickname.includes(text)) ||
+            (cleanSearch.length >= 3 && extId.includes(cleanSearch)) ||
+            (userId && lineUid === userId.toLowerCase())
+          );
+        });
+
+        let replyMessage = "";
+
+        if (matchedOrders.length === 1) {
+          const order = matchedOrders[0];
+          const stCfg = STATUS_MAP_TH[order.status] || { label: order.status, desc: "กำลังดำเนินการ" };
+
+          let formattedDelivery = order.deliveryDate || "-";
           try {
-            const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                contents: [{ parts: [{ text: originalText }] }],
-                systemInstruction: {
-                  parts: [{
-                    text: `คุณคือผู้ช่วย AI ของร้าน NUNUH Boutique (ร้านตัดเย็บเสื้อผ้าสตรี ชุดเดรส ชุดราตรี ชุดเจ้าสาว). ตอบลูกค้าอย่างสุภาพ อ่อนหวาน ลงท้ายด้วยค่ะ/นะคะ สั้นกระชับ 2-3 ย่อหน้า ใช้ emoji ⚜️✨👗 ตัดเย็บ และบอกลูกค้าว่าสามารถพิมพ์เบอร์โทรศัพท์เพื่อเช็คสถานะงานตัดเย็บได้ตลอด 24 ชม.`
-                  }]
-                }
-              })
+            formattedDelivery = new Date(order.deliveryDate).toLocaleDateString("th-TH", {
+              day: "numeric",
+              month: "long",
+              year: "numeric"
             });
-            if (geminiRes.ok) {
-              const geminiData = await geminiRes.json();
-              const candidateText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text;
-              if (candidateText) {
-                replyMessage = candidateText.trim();
+          } catch (e) {}
+
+          const price = Number(order.price || 0);
+          const deposit = Number(order.deposit || 0);
+          const discount = Number(order.discount || 0);
+          const finalPaid = Number(order.finalPaymentAmount || 0);
+          const unpaid = Math.max(0, price - deposit - discount - finalPaid);
+
+          const portalUrl = `${baseAppUrl}/?mode=customer&search=${encodeURIComponent(order.customerPhone || order.orderNumber)}`;
+
+          replyMessage = `⚜️ อัปเดตสถานะชุดสั่งตัด NUNUH Boutique ⚜️\n\n` +
+            `👤 เรียนคุณ: ${order.customerName}${order.customerNickname ? ` (${order.customerNickname})` : ""}\n` +
+            `🧾 รหัสออเดอร์: ${order.orderNumber}\n` +
+            `👗 แบบชุด: ${order.dressType}\n` +
+            `🧵 ชนิดผ้า: ${order.fabricType || "ตามที่ระบุ"} (${order.fabricColor || "-"})\n\n` +
+            `📍 สถานะปัจจุบัน: [${stCfg.label}]\n` +
+            `ℹ️ รายละเอียด: "${stCfg.desc}"\n` +
+            `📅 วันที่อัปเดตสถานะ: ${order.statusDate || order.orderDate || "-"}\n` +
+            `⏳ กำหนดส่งมอบ: ${formattedDelivery}\n\n` +
+            `💰 ข้อมูลยอดเงิน:\n` +
+            `• ราคารวม: ${price.toLocaleString()} บาท\n` +
+            `• มัดจำแล้ว: ${deposit.toLocaleString()} บาท\n` +
+            (unpaid === 0 ? `• สถานะชำระ: ชำระครบถ้วนแล้ว ✓\n\n` : `• ยอดคงเหลือวันรับชุด: ${unpaid.toLocaleString()} บาท\n\n`) +
+            `🔗 ตรวจสอบรายละเอียด สัดส่วน และติดตามงานตัดเย็บด้วยตนเองได้ที่นี่ค่ะ:\n` +
+            `${portalUrl}\n\n` +
+            `หากท่านต้องการสอบถามข้อมูลเพิ่มเติม สามารถพิมพ์ข้อความทิ้งไว้ในแชทนี้ได้เลยนะคะ ✨`;
+
+          // Associate lineUserId in database if not already linked
+          if (userId && (!order.lineUserId || order.lineUserId !== userId)) {
+            try {
+              order.lineUserId = userId;
+              order.updatedAt = Date.now();
+              await saveOrderToDb(order);
+            } catch (err) {}
+          }
+        } else if (matchedOrders.length > 1) {
+          let listText = "";
+          matchedOrders.slice(0, 5).forEach((order: any, idx: number) => {
+            const stCfg = STATUS_MAP_TH[order.status] || { label: order.status, desc: "" };
+            listText += `${idx + 1}. ออเดอร์ ${order.orderNumber} (${order.dressType})\n   📍 สถานะ: [${stCfg.label}]\n`;
+          });
+
+          const portalUrl = `${baseAppUrl}/?mode=customer&search=${encodeURIComponent(matchedOrders[0].customerPhone || matchedOrders[0].orderNumber)}`;
+
+          replyMessage = `⚜️ พบรายการสั่งตัดของคุณทั้งหมด ${matchedOrders.length} ออเดอร์ค่ะ:\n\n${listText}\n` +
+            `🔗 เปิดดูรายละเอียด สัดส่วน และสถานะทุกออเดอร์ได้ที่ลิงก์นี้เลยค่ะ:\n` +
+            `${portalUrl}\n\n` +
+            `ขอบพระคุณที่ไว้วางใจ NUNUH Boutique ค่ะ 💖`;
+        } else {
+          // No order found or customer greeting - use Gemini AI or welcoming Thai assistant message
+          if (process.env.GEMINI_API_KEY) {
+            try {
+              const geminiRes = await fetch(
+                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    contents: [{ parts: [{ text: originalText }] }],
+                    systemInstruction: {
+                      parts: [
+                        {
+                          text: `คุณคือผู้ช่วย AI ประจำห้องเสื้อ NUNUH Boutique (ร้านตัดเย็บเสื้อผ้าสตรี ชุดเดรส ชุดราตรี ชุดเจ้าสาว ชุดลูกไม้).
+ตอบลูกค้าอย่างสุภาพ อ่อนหวาน ลงท้ายด้วยค่ะ/นะคะ สั้นกระชับ 2-3 ย่อหน้า ใช้ emoji ⚜️✨👗
+แจ้งลูกค้าว่าสามารถพิมพ์ "เบอร์โทรศัพท์" หรือ "เลขที่ออเดอร์" เพื่อเช็คสถานะชุดสั่งตัด สัดส่วน และกำหนดส่งมอบได้ทันทีตลอด 24 ชั่วโมงค่ะ`
+                        }
+                      ]
+                    }
+                  })
+                }
+              );
+
+              if (geminiRes.ok) {
+                const geminiData = await geminiRes.json();
+                const candidateText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (candidateText) {
+                  replyMessage = candidateText.trim();
+                }
               }
+            } catch (e) {
+              console.error("[Vercel LINE Webhook] Gemini AI error:", e);
             }
-          } catch (e) {
-            console.error("[Vercel Webhook] Gemini error:", e);
+          }
+
+          if (!replyMessage) {
+            replyMessage =
+              `สวัสดีค่ะคุณลูกค้า ⚜️ NUNUH Boutique ⚜️ ยินดีให้บริการค่ะ\n\n` +
+              `📌 วิธีการตรวจสอบสถานะออเดอร์ตัดเย็บอัตโนมัติ:\n` +
+              `• พิมพ์ เบอร์โทรศัพท์ ที่แจ้งไว้ตอนวัดตัว (เช่น 086-555-1234)\n` +
+              `• หรือพิมพ์ เลขที่ออเดอร์ (เช่น NU-26008)\n` +
+              `• หรือพิมพ์ ชื่อ-นามสกุล ของท่าน\n\n` +
+              `ระบบจะส่งสถานะชุด สัดส่วน และกำหนดส่งมอบให้ท่านตรวจสอบทันทีเลยค่ะ ✨`;
           }
         }
 
-        // Send reply back to LINE
+        // Send reply to LINE Messaging API
         if (LINE_CHANNEL_ACCESS_TOKEN && replyToken) {
           try {
             await fetch("https://api.line.me/v2/bot/message/reply", {
@@ -101,16 +249,15 @@ export default async function handler(req: any, res: any) {
               })
             });
           } catch (replyErr) {
-            console.error("[Vercel Webhook] Error replying to LINE:", replyErr);
+            console.error("[Vercel LINE Webhook] Error replying to LINE:", replyErr);
           }
         }
       }
     }
 
-    // Always respond 200 OK with { message: "OK" } for LINE Verify
     return res.status(200).json({ message: "OK" });
   } catch (err: any) {
-    console.error("[Vercel Webhook] Handler error:", err);
+    console.error("[Vercel LINE Webhook] Handler error:", err);
     return res.status(200).json({ message: "OK" });
   }
 }

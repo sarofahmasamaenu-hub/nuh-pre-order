@@ -411,8 +411,10 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
       const shopId = shopMatches[0];
       return `https://chat.line.biz/${shopId}/chat/${lineUserId}`;
     }
-    const cleanId = lineOaId.startsWith('@') ? lineOaId : `@${lineOaId}`;
-    return `https://manager.line.biz/account/${cleanId}/chat/user/${lineUserId}`;
+    if (lineOaChatUrl && lineOaChatUrl.startsWith('http')) {
+      return lineOaChatUrl;
+    }
+    return `https://chat.line.biz/`;
   };
 
   const handleDirectLineChat = (order: Order) => {
@@ -445,8 +447,7 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
       window.open(directOaUrl, '_blank');
     } else {
       // ถ้าไม่มี LINE User ID หรือเป็นกรณีอื่นๆ ให้เปิดแผงควบคุมหลัก LINE OA แล้วแนะนำให้แอดมินค้นหาชื่อ
-      const cleanId = lineOaId.startsWith('@') ? lineOaId : `@${lineOaId}`;
-      const generalOaUrl = lineOaChatUrl || `https://manager.line.biz/account/${cleanId}/chat/`;
+      const generalOaUrl = lineOaChatUrl || 'https://chat.line.biz/';
       
       alert(
         `📋 คัดลอกข้อความและสถานะอัปเดตของ คุณ ${order.customerName} เรียบร้อยแล้วค่ะ!\n\n` +
@@ -468,8 +469,7 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
       const url = getDirectOaUrl(order, lineUserId);
       window.open(url, '_blank');
     } else {
-      const cleanId = lineOaId.startsWith('@') ? lineOaId : `@${lineOaId}`;
-      const generalOaUrl = lineOaChatUrl || `https://manager.line.biz/account/${cleanId}/chat/`;
+      const generalOaUrl = lineOaChatUrl || 'https://chat.line.biz/';
       window.open(generalOaUrl, '_blank');
     }
   };
