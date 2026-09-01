@@ -362,25 +362,47 @@ export default function App() {
       const storedLocal = localStorage.getItem('nunuh_orders');
       let currentLocal: Order[] = [];
       if (storedLocal) {
-        currentLocal = JSON.parse(storedLocal);
+        try {
+          currentLocal = JSON.parse(storedLocal);
+        } catch (e) {}
       }
+
+      // First fetch latest from server / database
+      let fetchedFromServer: Order[] = [];
+      try {
+        const getRes = await fetch('/api/orders');
+        if (getRes.ok) {
+          const data = await getRes.json();
+          if (Array.isArray(data)) {
+            fetchedFromServer = data;
+          }
+        }
+      } catch (e) {}
+
+      let combined = mergeOrders(currentLocal, fetchedFromServer);
+      if (ordersToUpload && ordersToUpload.length > 0) {
+        combined = mergeOrders(combined, ordersToUpload);
+      }
+
+      setOrders(combined);
+      localStorage.setItem('nunuh_orders', JSON.stringify(combined));
       
-      const targetOrders = ordersToUpload || currentLocal;
       const publicUrl = localStorage.getItem('nunuh_public_url') || window.location.origin;
 
-      const response = await fetch('/api/orders', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orders: targetOrders, publicUrl })
-      });
-      
-      if (response.ok) {
-        const mergedFromServer = await response.json();
-        if (Array.isArray(mergedFromServer)) {
-          // ผสานข้อมูลฝั่งเซิร์ฟเวอร์กลับลง LocalStorage
-          const finalMerged = mergeOrders(currentLocal, mergedFromServer);
-          setOrders(finalMerged);
-          localStorage.setItem('nunuh_orders', JSON.stringify(finalMerged));
+      if (combined.length > 0) {
+        const response = await fetch('/api/orders', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ orders: combined, publicUrl })
+        });
+        
+        if (response.ok) {
+          const mergedFromServer = await response.json();
+          if (Array.isArray(mergedFromServer) && mergedFromServer.length > 0) {
+            const finalMerged = mergeOrders(combined, mergedFromServer);
+            setOrders(finalMerged);
+            localStorage.setItem('nunuh_orders', JSON.stringify(finalMerged));
+          }
         }
       }
     } catch (e) {

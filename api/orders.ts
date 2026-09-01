@@ -1,3 +1,5 @@
+import fs from "fs";
+import path from "path";
 import {
   initDb,
   isPostgresActive,
@@ -6,6 +8,31 @@ import {
   deleteOrderInDb,
   getDeletedOrderIdsFromDb
 } from "../db";
+
+const ORDERS_FILE = path.join(process.cwd(), "orders.json");
+const DELETED_ORDERS_FILE = path.join(process.cwd(), "deleted_orders.json");
+
+function readOrdersFromFile(): any[] {
+  try {
+    if (fs.existsSync(ORDERS_FILE)) {
+      const data = fs.readFileSync(ORDERS_FILE, "utf8");
+      return JSON.parse(data);
+    }
+  } catch (e) {
+    console.error("[api/orders.ts] Error reading orders from file:", e);
+  }
+  return [];
+}
+
+function readDeletedOrdersFromFile(): string[] {
+  try {
+    if (fs.existsSync(DELETED_ORDERS_FILE)) {
+      const data = fs.readFileSync(DELETED_ORDERS_FILE, "utf8");
+      return JSON.parse(data);
+    }
+  } catch (e) {}
+  return [];
+}
 
 export default async function handler(req: any, res: any) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -30,7 +57,24 @@ export default async function handler(req: any, res: any) {
           console.error("[Vercel orders.ts] Error reading from DB:", e);
         }
       }
-      return res.status(200).json(orders);
+      if (!orders || orders.length === 0) {
+        orders = readOrdersFromFile();
+      }
+
+      let deletedIds: string[] = [];
+      if (isPostgresActive()) {
+        try {
+          deletedIds = await getDeletedOrderIdsFromDb();
+        } catch (e) {}
+      }
+      if (!deletedIds || deletedIds.length === 0) {
+        deletedIds = readDeletedOrdersFromFile();
+      }
+
+      const deletedSet = new Set(deletedIds);
+      const cleanOrders = orders.filter((o: any) => !deletedSet.has(o.id));
+
+      return res.status(200).json(cleanOrders);
     }
 
     if (req.method === "POST") {
@@ -53,6 +97,10 @@ export default async function handler(req: any, res: any) {
             currentDbOrders = fresh;
           }
         } catch (e) {}
+      }
+
+      if (!currentDbOrders || currentDbOrders.length === 0) {
+        currentDbOrders = readOrdersFromFile();
       }
 
       return res.status(200).json(currentDbOrders);

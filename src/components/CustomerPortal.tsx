@@ -320,87 +320,92 @@ export default function CustomerPortal({
     }
   };
 
-  // Helper function to search across orders
+  // Helper function to search across orders and return all orders for the matched customer
   const performSearch = (queryStr: string, allOrders: Order[]) => {
-    const query = queryStr.trim().toLowerCase();
+    const query = (queryStr || '').trim().toLowerCase();
     const queryDigits = query.replace(/\D/g, '');
     const cleanQuery = query.replace(/[\s-()]/g, '');
 
     if (!query) {
-      return { matchedOrders: null, searched: false };
+      return { matchedOrders: null, searched: false, isCustomerIdentified: false };
     }
 
-    // หากอยู่ในโหมดลูกค้า (isCustomerLocked = true): บังคับใช้ Privacy Policy ป้องกันการค้นหาชื่อหรือเบอร์ของผู้อื่น
-    if (isCustomerLocked) {
-      const isFullPhone = queryDigits.length >= 9;
-      const isOrderNumOrSku = query.length >= 3;
+    // Normalize search query: remove Thai title prefixes (คุณ, นางสาว, น.ส., นาง, นาย, ด.ญ., ด.ช., พี่, น้อง)
+    const strippedTitleQuery = query.replace(/^(คุณ|นางสาว|น\.ส\.|นาง|นาย|ด\.ญ\.|ด\.ช\.|พี่|น้อง)\s*/i, '').trim();
+    const cleanStrippedQuery = strippedTitleQuery.replace(/[- \s\t\n()]/g, '');
 
-      const matched = allOrders.filter(order => {
-        const phoneDigits = (order.customerPhone || '').replace(/\D/g, '');
-        const cleanPhone = (order.customerPhone || '').replace(/[\s-()]/g, '');
-        const orderNum = (order.orderNumber || '').toLowerCase();
-        const sku = (order.sku || '').toLowerCase();
-        const lineUserId = (order.lineUserId || '').toLowerCase();
-
-        // ค้นหาได้เฉพาะเบอร์โทรเต็ม 9-10 หลัก หรือหมายเลขคิวออเดอร์/SKU/LINE ID เท่านั้น (ไม่อนุญาตให้ค้นหาด้วยชื่อลูกค้า)
-        const matchesPhone = isFullPhone && (
-          phoneDigits === queryDigits || 
-          phoneDigits.endsWith(queryDigits) || 
-          queryDigits.endsWith(phoneDigits) ||
-          cleanPhone === cleanQuery
-        );
-        const matchesOrderNum = isOrderNumOrSku && (orderNum === query || order.id?.toLowerCase() === query);
-        const matchesSku = isOrderNumOrSku && sku === query;
-        const matchesLine = lineUserId && lineUserId === query;
-
-        return matchesPhone || matchesOrderNum || matchesSku || matchesLine;
-      });
-
-      if (matched.length > 0) {
-        // ดึงเฉพาะออเดอร์ที่เป็นของเบอร์โทรหรือคิวออเดอร์เดียวกับที่ค้นพบเท่านั้น
-        const matchedPhones = new Set(matched.map(o => (o.customerPhone || '').replace(/\D/g, '')));
-        const matchedOrderIds = new Set(matched.map(o => o.id));
-
-        const customerOrders = allOrders.filter(o => {
-          const pDigits = (o.customerPhone || '').replace(/\D/g, '');
-          return (pDigits && matchedPhones.has(pDigits)) || matchedOrderIds.has(o.id);
-        });
-
-        return { matchedOrders: customerOrders, searched: true, isCustomerIdentified: true };
-      }
-
-      // หากไม่พบการจับคู่แบบระบุตัวตน หรือพิมพ์เฉพาะตัวอักษรค้นหาทั่วไป
-      return { matchedOrders: [], searched: true, isCustomerIdentified: false };
-    }
-
-    // โหมดเจ้าของร้าน / พนักงาน (isCustomerLocked = false): ค้นหาได้เต็มรูปแบบตามปกติ 100%
     const matched = allOrders.filter(order => {
+      if (!order) return false;
       const phoneDigits = (order.customerPhone || '').replace(/\D/g, '');
       const cleanPhone = (order.customerPhone || '').replace(/[\s-()]/g, '');
       const orderNum = (order.orderNumber || '').toLowerCase();
+      const cleanOrderNum = orderNum.replace(/[- \s]/g, '');
       const customerName = (order.customerName || '').toLowerCase();
+      const nameNoTitle = customerName.replace(/^(คุณ|นางสาว|น\.ส\.|นาง|นาย|ด\.ญ\.|ด\.ช\.|พี่|น้อง)\s*/i, '').trim();
+      const nameNoSpaces = nameNoTitle.replace(/[- \s\t\n]/g, '');
       const customerNickname = (order.customerNickname || '').toLowerCase();
       const sku = (order.sku || '').toLowerCase();
+      const lineUserId = (order.lineUserId || '').toLowerCase();
+      const extOrderId = (order.externalOrderId || '').toLowerCase();
 
+      // 1. Phone number matching (exact or substring with 3+ digits)
       const matchesPhone = 
         (queryDigits.length >= 3 && (phoneDigits.includes(queryDigits) || queryDigits.includes(phoneDigits))) ||
         (cleanQuery.length >= 3 && cleanPhone.includes(cleanQuery));
-      const matchesOrderNum = orderNum.includes(query);
-      const matchesName = customerName.includes(query);
-      const matchesNickname = customerNickname.includes(query);
-      const matchesSku = sku.includes(query);
 
-      return matchesPhone || matchesOrderNum || matchesName || matchesNickname || matchesSku;
+      // 2. Order number / SKU / Line / Ext ID matching
+      const matchesOrderNum = 
+        orderNum.includes(query) || 
+        (cleanQuery.length >= 2 && cleanOrderNum.includes(cleanQuery)) ||
+        order.id?.toLowerCase() === query;
+      const matchesSku = sku && sku.includes(query);
+      const matchesExtId = extOrderId && extOrderId.includes(query);
+      const matchesLine = lineUserId && lineUserId === query;
+
+      // 3. Customer name matching (full name, stripped title, without spaces)
+      const matchesDirectName = 
+        customerName.includes(query) || 
+        (nameNoTitle && nameNoTitle.includes(strippedTitleQuery)) ||
+        (cleanStrippedQuery.length >= 2 && nameNoSpaces.includes(cleanStrippedQuery));
+
+      // 4. Customer nickname matching
+      const matchesNickname = customerNickname && (
+        customerNickname.includes(query) || 
+        customerNickname.includes(strippedTitleQuery) || 
+        query.includes(customerNickname)
+      );
+
+      // 5. Word tokens matching (e.g. searching first name only or last name only)
+      const words = query.split(/\s+/).filter(w => w.length >= 2);
+      const matchesWords = words.length > 0 && words.some(w => 
+        customerName.includes(w) || 
+        nameNoTitle.includes(w) || 
+        (customerNickname && customerNickname.includes(w))
+      );
+
+      return matchesPhone || matchesOrderNum || matchesSku || matchesExtId || matchesLine || matchesDirectName || matchesNickname || matchesWords;
     });
 
     if (matched.length > 0) {
-      const matchedPhones = new Set(matched.map(o => (o.customerPhone || '').replace(/\D/g, '')));
-      const matchedNames = new Set(matched.map(o => (o.customerName || '').trim().toLowerCase()));
+      // Find all associated phone numbers and normalized customer names from matched orders
+      const matchedPhones = new Set(
+        matched.map(o => (o.customerPhone || '').replace(/\D/g, '')).filter(Boolean)
+      );
+      const matchedNames = new Set(
+        matched.map(o => (o.customerName || '').replace(/^(คุณ|นางสาว|น\.ส\.|นาง|นาย|ด\.ญ\.|ด\.ช\.|พี่|น้อง)\s*/i, '').replace(/[- \s\t\n]/g, '').toLowerCase()).filter(Boolean)
+      );
+      const matchedOrderIds = new Set(matched.map(o => o.id));
 
+      // Retrieve ALL orders belonging to this customer
       const allCustomerOrders = allOrders.filter(o => {
         const pDigits = (o.customerPhone || '').replace(/\D/g, '');
-        const cName = (o.customerName || '').trim().toLowerCase();
-        return (pDigits && matchedPhones.has(pDigits)) || (cName && matchedNames.has(cName));
+        const cNameNorm = (o.customerName || '').replace(/^(คุณ|นางสาว|น\.ส\.|นาง|นาย|ด\.ญ\.|ด\.ช\.|พี่|น้อง)\s*/i, '').replace(/[- \s\t\n]/g, '').toLowerCase();
+        return (pDigits && matchedPhones.has(pDigits)) || (cNameNorm && matchedNames.has(cNameNorm)) || matchedOrderIds.has(o.id);
+      });
+
+      // Sort newest orders first
+      allCustomerOrders.sort((a, b) => {
+        return (b.orderNumber || '').localeCompare(a.orderNumber || '', undefined, { numeric: true });
       });
 
       return { matchedOrders: allCustomerOrders, searched: true, isCustomerIdentified: true };
@@ -447,7 +452,7 @@ export default function CustomerPortal({
           setHasSearched(searched);
           if (isCustomerLocked && isCustomerIdentified && matchedOrders && matchedOrders.length > 0) {
             setIsCustomerIdentityLocked(true);
-            setLockedCustomerIdentityQuery(matchedOrders[0].customerPhone || matchedOrders[0].orderNumber || queryToUse);
+            setLockedCustomerIdentityQuery(matchedOrders[0].customerPhone || matchedOrders[0].customerName || matchedOrders[0].orderNumber || queryToUse);
           }
         }
       }
@@ -468,8 +473,8 @@ export default function CustomerPortal({
   }, [orders]);
 
   // Handle Search Input Change with live search
-  const handleSearchInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (isReviewOnlyMode || (isCustomerLocked && isCustomerIdentityLocked)) return;
+  const handleSearchInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (isReviewOnlyMode) return;
     const val = e.target.value;
     setSearchQuery(val);
 
@@ -479,32 +484,59 @@ export default function CustomerPortal({
       return;
     }
 
-    const { matchedOrders, searched, isCustomerIdentified } = performSearch(val, orders);
+    let currentOrdersList = orders;
+    if (!currentOrdersList || currentOrdersList.length === 0) {
+      try {
+        const res = await fetch('/api/orders');
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data) && data.length > 0) {
+            currentOrdersList = data;
+            if (onUpdateOrders) onUpdateOrders(data);
+          }
+        }
+      } catch (err) {}
+    }
+
+    const { matchedOrders, searched, isCustomerIdentified } = performSearch(val, currentOrdersList);
     setSearchedOrders(matchedOrders);
     setHasSearched(searched);
 
     if (isCustomerLocked && isCustomerIdentified && matchedOrders && matchedOrders.length > 0) {
-      setIsCustomerIdentityLocked(true);
-      setLockedCustomerIdentityQuery(matchedOrders[0].customerPhone || matchedOrders[0].orderNumber || val);
+      setLockedCustomerIdentityQuery(matchedOrders[0].customerPhone || matchedOrders[0].customerName || matchedOrders[0].orderNumber || val);
     }
   };
 
   // Handle Search Form Submit
-  const handleSearch = (e: React.FormEvent) => {
+  const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isReviewOnlyMode || (isCustomerLocked && isCustomerIdentityLocked)) return;
+    if (isReviewOnlyMode) return;
     if (!searchQuery.trim()) {
       setSearchedOrders(null);
       setHasSearched(false);
       return;
     }
-    const { matchedOrders, searched, isCustomerIdentified } = performSearch(searchQuery, orders);
+
+    let currentOrdersList = orders;
+    if (!currentOrdersList || currentOrdersList.length === 0) {
+      try {
+        const res = await fetch('/api/orders');
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data) && data.length > 0) {
+            currentOrdersList = data;
+            if (onUpdateOrders) onUpdateOrders(data);
+          }
+        }
+      } catch (err) {}
+    }
+
+    const { matchedOrders, searched, isCustomerIdentified } = performSearch(searchQuery, currentOrdersList);
     setSearchedOrders(matchedOrders);
     setHasSearched(searched);
 
     if (isCustomerLocked && isCustomerIdentified && matchedOrders && matchedOrders.length > 0) {
-      setIsCustomerIdentityLocked(true);
-      setLockedCustomerIdentityQuery(matchedOrders[0].customerPhone || matchedOrders[0].orderNumber || searchQuery);
+      setLockedCustomerIdentityQuery(matchedOrders[0].customerPhone || matchedOrders[0].customerName || matchedOrders[0].orderNumber || searchQuery);
     }
   };
 
@@ -623,8 +655,8 @@ export default function CustomerPortal({
             <Clock className="h-5 w-5" />
           </div>
           <div>
-            <h4 className="font-serif font-bold text-lg text-natural-espresso">ค้นหาประวัติการสั่งตัด & ตรวจสอบสถานะชุด</h4>
-            <p className="text-xs text-natural-espresso/60">กรอกเบอร์โทรศัพท์ (เช่น 0812345678) หรือหมายเลขคำสั่งซื้อ (เช่น NU-26001)</p>
+            <h4 className="font-serif font-bold text-lg text-natural-espresso">ค้นหาประวัติการสั่งตัด & ข้อมูลชุดของลูกค้าทั้งหมด</h4>
+            <p className="text-xs text-natural-espresso/60">ค้นหาได้ทั้งชื่อลูกค้า (เช่น คุณมัสยา, ซารอฟะห์), เบอร์มือถือ (เช่น 0801462230) หรือหมายเลขคิวออเดอร์ (เช่น NU-26008)</p>
           </div>
         </div>
 
@@ -649,54 +681,67 @@ export default function CustomerPortal({
               <span>สงวนสิทธิ์เฉพาะออเดอร์นี้</span>
             </div>
           </div>
-        ) : isCustomerLocked && isCustomerIdentityLocked ? (
-          <div className="bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-amber-500/10 border border-emerald-300/80 p-4 sm:p-5 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3 shadow-3xs animate-fade-in my-1">
-            <div className="flex items-center space-x-3.5">
-              <div className="p-3 bg-emerald-700 text-white rounded-2xl shadow-xs shrink-0">
-                <Lock className="h-5 w-5" />
-              </div>
-              <div>
-                <h4 className="font-serif font-black text-sm sm:text-base text-emerald-950 flex items-center gap-2">
-                  <span>🔒 ล็อคการแสดงผลเฉพาะข้อมูลของคุณ ({lockedCustomerIdentityQuery})</span>
-                </h4>
-                <p className="text-xs text-emerald-900/80 mt-0.5 leading-relaxed">
-                  {searchedOrders && searchedOrders[0] ? `เรียนคุณ ${searchedOrders[0].customerName.replace('คุณ', '').trim()}` : ''} — ระบบคุ้มครองความเป็นส่วนตัวและจำกัดไม่ให้ค้นหาข้อมูลลูกค้ารายอื่นค่ะ ✨
-                </p>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                setIsCustomerIdentityLocked(false);
-                setLockedCustomerIdentityQuery('');
-                setSearchQuery('');
-                setSearchedOrders(null);
-                setHasSearched(false);
-              }}
-              className="bg-white hover:bg-emerald-50 text-emerald-900 border border-emerald-300 px-4 py-2.5 rounded-xl text-xs font-extrabold shadow-3xs flex items-center gap-1.5 shrink-0 cursor-pointer transition-all"
-            >
-              <span>ค้นหาเบอร์อื่นของคุณ</span>
-            </button>
-          </div>
         ) : (
-          <form onSubmit={handleSearch} className="flex flex-col sm:flex-row gap-3">
-            <div className="relative flex-1">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-natural-espresso/45" />
-              <input
-                type="text"
-                placeholder={isCustomerLocked ? "ป้อนเบอร์มือถือของคุณ (10 หลัก) หรือ หมายเลขคิว เพื่อค้นหา..." : "ป้อนเบอร์มือถือ หรือ หมายเลขคิวออเดอร์ เพื่อค้นหา..."}
-                value={searchQuery}
-                onChange={handleSearchInputChange}
-                className="w-full text-sm pl-12 pr-4 py-3.5 rounded-xl border border-natural-wheat focus:outline-none focus:ring-2 focus:ring-natural-clay/20 focus:border-natural-clay bg-natural-cream/15 text-natural-espresso font-medium"
-              />
+          <div className="space-y-3">
+            <form onSubmit={handleSearch} className="flex flex-col sm:flex-row gap-3">
+              <div className="relative flex-1">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-natural-espresso/45" />
+                <input
+                  type="text"
+                  placeholder="พิมพ์ชื่อลูกค้า (เช่น คุณมัสยา, ซารอฟะห์), เบอร์มือถือ หรือ หมายเลขคิว เพื่อค้นหา..."
+                  value={searchQuery}
+                  onChange={handleSearchInputChange}
+                  className="w-full text-sm pl-12 pr-10 py-3.5 rounded-xl border border-natural-wheat focus:outline-none focus:ring-2 focus:ring-natural-clay/20 focus:border-natural-clay bg-natural-cream/15 text-natural-espresso font-medium"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchQuery('');
+                      setSearchedOrders(null);
+                      setHasSearched(false);
+                    }}
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 p-1 text-natural-espresso/40 hover:text-natural-espresso rounded-full hover:bg-stone-100 cursor-pointer"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+              <button
+                type="submit"
+                className="bg-natural-espresso hover:bg-natural-clay text-natural-cream hover:text-white font-serif font-bold px-8 py-3.5 rounded-xl transition-all duration-300 shadow-sm cursor-pointer whitespace-nowrap"
+              >
+                ค้นหารายการออเดอร์
+              </button>
+            </form>
+
+            {/* Quick search suggestions */}
+            <div className="flex items-center flex-wrap gap-2 text-xs text-natural-espresso/70 pt-1">
+              <span className="text-[11px] text-natural-espresso/50 font-medium">💡 คำค้นหายอดนิยม:</span>
+              {[
+                { label: 'คุณมัสยา มีสุข', query: 'คุณมัสยา มีสุข' },
+                { label: '0801462230', query: '0801462230' },
+                { label: 'ซารอฟะห์ มะสาแม', query: 'ซารอฟะห์' },
+                { label: '086-555-1234', query: '086-555-1234' },
+                { label: 'อนิษา บินหมัด', query: 'อนิษา' },
+                { label: 'NU-26008', query: 'NU-26008' }
+              ].map((chip, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery(chip.query);
+                    const { matchedOrders, searched } = performSearch(chip.query, orders);
+                    setSearchedOrders(matchedOrders);
+                    setHasSearched(searched);
+                  }}
+                  className="px-2.5 py-1 bg-stone-100 hover:bg-natural-sand/70 hover:text-natural-espresso text-natural-espresso/80 rounded-lg text-[11px] font-medium transition-all cursor-pointer border border-stone-200/60"
+                >
+                  {chip.label}
+                </button>
+              ))}
             </div>
-            <button
-              type="submit"
-              className="bg-natural-espresso hover:bg-natural-clay text-natural-cream hover:text-white font-serif font-bold px-8 py-3.5 rounded-xl transition-all duration-300 shadow-sm cursor-pointer whitespace-nowrap"
-            >
-              ค้นหารายการออเดอร์
-            </button>
-          </form>
+          </div>
         )}
 
         {/* Search Results Display */}
@@ -710,21 +755,31 @@ export default function CustomerPortal({
 
               <div className="max-w-lg mx-auto space-y-2">
                 <h3 className="font-serif font-extrabold text-xl sm:text-2xl text-natural-espresso">
-                  ศูนย์ค้นหาและติดตามคิวงานตัดเย็บ (Customer Portal)
+                  ศูนย์ค้นหาและติดตามข้อมูลการสั่งตัดทั้งหมด (Customer Portal)
                 </h3>
                 <p className="text-xs sm:text-sm text-natural-espresso/70 leading-relaxed">
-                  กรุณากรอก <strong className="text-natural-espresso underline">เบอร์โทรศัพท์มือถือ 10 หลัก</strong> หรือ <strong className="text-natural-espresso underline">หมายเลขคิวออเดอร์</strong> ในช่องค้นหาด้านบน แล้วกดปุ่ม <strong>"ค้นหารายการออเดอร์"</strong> เพื่อตรวจสอบรายละเอียดโปรไฟล์ สัดส่วนวัดตัว และติดตามคิวความคืบหน้าคิวงานตัดเย็บค่ะ
+                  กรุณากรอก <strong className="text-natural-espresso underline">ชื่อลูกค้า</strong>, <strong className="text-natural-espresso underline">เบอร์โทรศัพท์มือถือ</strong> หรือ <strong className="text-natural-espresso underline">หมายเลขคิวออเดอร์</strong> ในช่องค้นหาด้านบน แล้วกดปุ่ม <strong>"ค้นหารายการออเดอร์"</strong> เพื่อดูข้อมูลการสั่งชุด สัดส่วนการวัดตัว และประวัติการตัดเย็บทั้งหมดของคุณค่ะ
                 </p>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-xl mx-auto pt-2 text-left">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-2xl mx-auto pt-2 text-left">
+                <div className="bg-white/90 p-4 rounded-2xl border border-natural-wheat/60 shadow-3xs flex items-start space-x-3">
+                  <div className="p-2 bg-rose-50 text-rose-700 rounded-xl shrink-0 mt-0.5">
+                    <User className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <p className="font-extrabold text-xs text-natural-espresso">ค้นหาด้วยชื่อลูกค้า</p>
+                    <p className="text-[11px] text-natural-espresso/60 mt-0.5">พิมพ์ชื่อหรือชื่อเล่น เช่น <span className="text-natural-clay font-bold">คุณมัสยา</span>, <span className="text-natural-clay font-bold">ซารอฟะห์</span></p>
+                  </div>
+                </div>
+
                 <div className="bg-white/90 p-4 rounded-2xl border border-natural-wheat/60 shadow-3xs flex items-start space-x-3">
                   <div className="p-2 bg-emerald-50 text-emerald-700 rounded-xl shrink-0 mt-0.5">
                     <Phone className="h-4 w-4" />
                   </div>
                   <div>
                     <p className="font-extrabold text-xs text-natural-espresso">ค้นหาด้วยเบอร์มือถือ</p>
-                    <p className="text-[11px] text-natural-espresso/60 mt-0.5">พิมพ์เบอร์มือถือที่ลงทะเบียนสั่งตัด เช่น <span className="font-mono text-natural-clay font-bold">0801462230</span></p>
+                    <p className="text-[11px] text-natural-espresso/60 mt-0.5">พิมพ์เบอร์ที่ลงทะเบียน เช่น <span className="font-mono text-natural-clay font-bold">0801462230</span></p>
                   </div>
                 </div>
 
@@ -734,7 +789,7 @@ export default function CustomerPortal({
                   </div>
                   <div>
                     <p className="font-extrabold text-xs text-natural-espresso">ค้นหาด้วยเลขคิวออเดอร์</p>
-                    <p className="text-[11px] text-natural-espresso/60 mt-0.5">พิมพ์รหัสออเดอร์ของคุณ เช่น <span className="font-mono text-natural-clay font-bold">NU-26001</span></p>
+                    <p className="text-[11px] text-natural-espresso/60 mt-0.5">พิมพ์รหัสออเดอร์ เช่น <span className="font-mono text-natural-clay font-bold">NU-26008</span></p>
                   </div>
                 </div>
               </div>
