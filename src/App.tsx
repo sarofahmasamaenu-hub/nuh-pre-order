@@ -43,7 +43,14 @@ import {
   Trash2,
   Camera,
   Check,
-  Database
+  Database,
+  MessageSquare,
+  Key,
+  ShieldCheck,
+  Copy,
+  ExternalLink,
+  HelpCircle,
+  RefreshCw
 } from 'lucide-react';
 
 export default function App() {
@@ -218,6 +225,86 @@ export default function App() {
 
   const [dbStatus, setDbStatus] = useState<{ postgresActive?: boolean; mode?: string; hasDatabaseUrl?: boolean } | null>(null);
 
+  // LINE OA & Messaging API Configuration States
+  const [lineChannelAccessToken, setLineChannelAccessToken] = useState<string>(() => {
+    return localStorage.getItem('nunuh_line_channel_access_token') || '';
+  });
+  const [lineChannelSecret, setLineChannelSecret] = useState<string>(() => {
+    return localStorage.getItem('nunuh_line_channel_secret') || '';
+  });
+  const [lineOaId, setLineOaId] = useState<string>(() => {
+    return localStorage.getItem('nunuh_line_oa_id') || '@237aynfq';
+  });
+  const [lineOaChatUrl, setLineOaChatUrl] = useState<string>(() => {
+    return localStorage.getItem('nunuh_line_oa_chat_url') || 'https://chat.line.biz/U7ad64905450d2c18cf2eb27f61c5ea4c';
+  });
+  const [lineConfigStatus, setLineConfigStatus] = useState<{
+    tokenSet?: boolean;
+    secretSet?: boolean;
+    lineOaId?: string;
+    webhookUrl?: string;
+    source?: string;
+  } | null>(null);
+  const [settingsTab, setSettingsTab] = useState<'general' | 'line'>('general');
+  const [testPushUserId, setTestPushUserId] = useState<string>('');
+  const [isTestingPush, setIsTestingPush] = useState<boolean>(false);
+  const [testPushResult, setTestPushResult] = useState<{ success: boolean; msg: string; tip?: string } | null>(null);
+  const [copiedWebhook, setCopiedWebhook] = useState<boolean>(false);
+
+  const fetchLineConfigStatus = async () => {
+    try {
+      const res = await fetch('/api/line-config-status');
+      if (res.ok) {
+        const data = await res.json();
+        setLineConfigStatus(data);
+      }
+    } catch (e) {
+      console.warn('Could not fetch LINE config status:', e);
+    }
+  };
+
+  const handleTestPushMessage = async () => {
+    if (!testPushUserId.trim()) {
+      setTestPushResult({
+        success: false,
+        msg: 'กรุณาระบุ LINE User ID (ขึ้นต้นด้วยตัว U เช่น Uf150dba359d90...)'
+      });
+      return;
+    }
+    setIsTestingPush(true);
+    setTestPushResult(null);
+    try {
+      const res = await fetch('/api/test-line-push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          targetUserId: testPushUserId.trim(),
+          testMessage: `⚜️ ทดสอบการเชื่อมต่อ LINE Messaging API สำเร็จ! ⚜️\nระบบห้องเสื้อ NUNUH Boutique ได้เชื่อมต่อกับบอท LINE OA เรียบร้อยแล้วค่ะ ✨`
+        })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setTestPushResult({
+          success: true,
+          msg: '🎉 ส่งข้อความทดสอบสำเร็จ! ข้อความส่งตรงถึง LINE ของผู้ใช้เรียบร้อยแล้วค่ะ'
+        });
+      } else {
+        setTestPushResult({
+          success: false,
+          msg: data.error || 'เกิดข้อผิดพลาดในการส่งข้อความ',
+          tip: data.helpTip || 'โปรดตรวจสอบความถูกต้องของ Token และตรวจสอบว่าผู้ใช้ได้แอดเป็นเพื่อนกับ LINE OA แล้ว'
+        });
+      }
+    } catch (err: any) {
+      setTestPushResult({
+        success: false,
+        msg: `การเชื่อมต่อเซิร์ฟเวอร์ขัดข้อง: ${err.message || err}`
+      });
+    } finally {
+      setIsTestingPush(false);
+    }
+  };
+
   const checkDbStatus = async () => {
     try {
       const res = await fetch('/api/db-status');
@@ -232,6 +319,7 @@ export default function App() {
 
   useEffect(() => {
     checkDbStatus();
+    fetchLineConfigStatus();
   }, []);
 
   const handleUpdateBoutiquePhone = async (newPhone: string) => {
@@ -456,10 +544,24 @@ export default function App() {
             setTheme(serverSettings.theme);
             localStorage.setItem('nunuh_selected_theme', serverSettings.theme);
           }
+          if (serverSettings.lineChannelAccessToken) {
+            setLineChannelAccessToken(serverSettings.lineChannelAccessToken);
+            localStorage.setItem('nunuh_line_channel_access_token', serverSettings.lineChannelAccessToken);
+          }
+          if (serverSettings.lineChannelSecret) {
+            setLineChannelSecret(serverSettings.lineChannelSecret);
+            localStorage.setItem('nunuh_line_channel_secret', serverSettings.lineChannelSecret);
+          }
+          if (serverSettings.ownerLineUserId) {
+            setOwnerLineUserId(serverSettings.ownerLineUserId);
+            localStorage.setItem('nunuh_owner_line_user_id', serverSettings.ownerLineUserId);
+          }
           if (serverSettings.lineOaId) {
+            setLineOaId(serverSettings.lineOaId);
             localStorage.setItem('nunuh_line_oa_id', serverSettings.lineOaId);
           }
           if (serverSettings.lineOaChatUrl) {
+            setLineOaChatUrl(serverSettings.lineOaChatUrl);
             localStorage.setItem('nunuh_line_oa_chat_url', serverSettings.lineOaChatUrl);
           }
           if (serverSettings.publicUrl) {
@@ -470,8 +572,11 @@ export default function App() {
           const localPhone = localStorage.getItem('nunuh_boutique_phone') || '086-555-1234';
           const localLogo = localStorage.getItem('nunuh_boutique_logo') || '';
           const localTheme = localStorage.getItem('nunuh_selected_theme') || 'pink';
+          const localToken = localStorage.getItem('nunuh_line_channel_access_token') || '';
+          const localSecret = localStorage.getItem('nunuh_line_channel_secret') || '';
+          const localOwnerId = localStorage.getItem('nunuh_owner_line_user_id') || '';
           const localLineOaId = localStorage.getItem('nunuh_line_oa_id') || '@237aynfq';
-          const localLineOaChatUrl = localStorage.getItem('nunuh_line_oa_chat_url') || 'https://chat.line.biz/';
+          const localLineOaChatUrl = localStorage.getItem('nunuh_line_oa_chat_url') || 'https://chat.line.biz/U7ad64905450d2c18cf2eb27f61c5ea4c';
           const localPublicUrl = localStorage.getItem('nunuh_public_url') || window.location.origin;
 
           await fetch('/api/settings', {
@@ -481,6 +586,9 @@ export default function App() {
               boutiquePhone: localPhone,
               boutiqueLogo: localLogo,
               theme: localTheme,
+              lineChannelAccessToken: localToken,
+              lineChannelSecret: localSecret,
+              ownerLineUserId: localOwnerId,
               lineOaId: localLineOaId,
               lineOaChatUrl: localLineOaChatUrl,
               publicUrl: localPublicUrl
@@ -1859,22 +1967,25 @@ export default function App() {
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.95, y: 10 }}
                 transition={{ duration: 0.2, ease: "easeOut" }}
-                className="relative transform overflow-hidden rounded-3xl bg-white p-6 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-md border border-natural-wheat z-50"
+                className="relative transform overflow-hidden rounded-3xl bg-white p-6 text-left shadow-2xl transition-all sm:my-8 sm:w-full sm:max-w-2xl border border-natural-wheat z-50 max-h-[90vh] flex flex-col"
               >
                 {/* Header */}
-                <div className="flex items-center justify-between border-b border-natural-wheat pb-4 mb-5">
-                  <div className="flex items-center space-x-2">
-                    <div className="h-8 w-8 rounded-lg bg-natural-sand/50 flex items-center justify-center text-natural-clay">
-                      <Settings className="h-4 w-4" />
+                <div className="flex items-center justify-between border-b border-natural-wheat pb-4 mb-4 shrink-0">
+                  <div className="flex items-center space-x-2.5">
+                    <div className="h-9 w-9 rounded-xl bg-natural-espresso text-natural-cream flex items-center justify-center shadow-2xs">
+                      <Settings className="h-5 w-5 text-natural-ochre" />
                     </div>
-                    <h3 className="text-lg font-serif font-bold text-natural-espresso">
-                      ตั้งค่าข้อมูลติดต่อห้องเสื้อ
-                    </h3>
+                    <div>
+                      <h3 className="text-lg font-serif font-bold text-natural-espresso">
+                        ตั้งค่าระบบห้องเสื้อและการเชื่อมต่อ
+                      </h3>
+                      <p className="text-[11px] text-natural-espresso/60">จัดการข้อมูลทั่วไป การติดต่อ และระบบเชื่อมต่อ LINE Official Account</p>
+                    </div>
                   </div>
                   <button
                     type="button"
                     onClick={() => setIsSettingsOpen(false)}
-                    className="rounded-lg p-1 text-natural-espresso/40 hover:bg-natural-sand/30 hover:text-natural-espresso transition-all cursor-pointer"
+                    className="rounded-full p-1.5 text-natural-espresso/40 hover:bg-natural-sand/50 hover:text-natural-espresso transition-all cursor-pointer"
                   >
                     <span className="sr-only">ปิด</span>
                     <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor">
@@ -1883,171 +1994,395 @@ export default function App() {
                   </button>
                 </div>
 
+                {/* Settings Navigation Tabs */}
+                <div className="flex border-b border-natural-sand/60 mb-4 shrink-0 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSettingsTab('general')}
+                    className={`pb-2.5 px-3 text-xs font-bold transition-all border-b-2 flex items-center gap-1.5 cursor-pointer ${
+                      settingsTab === 'general'
+                        ? 'border-natural-clay text-natural-clay font-black'
+                        : 'border-transparent text-natural-espresso/60 hover:text-natural-espresso'
+                    }`}
+                  >
+                    <Store className="h-3.5 w-3.5" />
+                    <span>1. ข้อมูลทั่วไป & ห้องเสื้อ</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSettingsTab('line');
+                      fetchLineConfigStatus();
+                    }}
+                    className={`pb-2.5 px-3 text-xs font-bold transition-all border-b-2 flex items-center gap-1.5 cursor-pointer relative ${
+                      settingsTab === 'line'
+                        ? 'border-emerald-600 text-emerald-800 font-black'
+                        : 'border-transparent text-natural-espresso/60 hover:text-emerald-700'
+                    }`}
+                  >
+                    <MessageSquare className="h-3.5 w-3.5 text-emerald-600" />
+                    <span>2. เชื่อมต่อ LINE OA & บอทแจ้งเตือน</span>
+                    {lineConfigStatus?.tokenSet && (
+                      <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                    )}
+                  </button>
+                </div>
+
                 {/* Body */}
-                <form onSubmit={(e) => {
+                <form onSubmit={async (e) => {
                   e.preventDefault();
-                  setIsSettingsOpen(false);
-                }} className="space-y-4">
-                  {/* Database Persistence Status Badge */}
-                  <div className="bg-natural-sand/30 p-3 rounded-2xl border border-natural-wheat/60 space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-natural-espresso flex items-center gap-1.5">
-                        <Database className="h-3.5 w-3.5 text-natural-clay" />
-                        <span>สถานะฐานข้อมูลถาวร (Database Storage)</span>
-                      </span>
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 ${
-                        dbStatus?.postgresActive
-                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                          : 'bg-amber-100 text-amber-800 border border-amber-300'
-                      }`}>
-                        <span className={`w-1.5 h-1.5 rounded-full ${dbStatus?.postgresActive ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
-                        {dbStatus?.postgresActive ? 'PostgreSQL เชื่อมต่อสำเร็จ 🟢' : 'Local Persistent Storage Mode 🟡'}
-                      </span>
+                  try {
+                    const payload = {
+                      boutiquePhone,
+                      boutiqueLogo,
+                      ownerLineUserId,
+                      lineChannelAccessToken,
+                      lineChannelSecret,
+                      lineOaId,
+                      lineOaChatUrl,
+                      theme
+                    };
+                    await fetch('/api/settings', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify(payload)
+                    });
+                    localStorage.setItem('nunuh_boutique_phone', boutiquePhone);
+                    localStorage.setItem('nunuh_boutique_logo', boutiqueLogo);
+                    localStorage.setItem('nunuh_owner_line_user_id', ownerLineUserId);
+                    localStorage.setItem('nunuh_line_channel_access_token', lineChannelAccessToken);
+                    localStorage.setItem('nunuh_line_channel_secret', lineChannelSecret);
+                    localStorage.setItem('nunuh_line_oa_id', lineOaId);
+                    localStorage.setItem('nunuh_line_oa_chat_url', lineOaChatUrl);
+                    
+                    fetchLineConfigStatus();
+                    setIsSettingsOpen(false);
+                  } catch (err) {
+                    console.error('Failed to save settings:', err);
+                    setIsSettingsOpen(false);
+                  }
+                }} className="space-y-4 overflow-y-auto pr-1 flex-1">
+                  
+                  {settingsTab === 'general' && (
+                    <div className="space-y-4">
+                      {/* Database Persistence Status Badge */}
+                      <div className="bg-natural-sand/30 p-3 rounded-2xl border border-natural-wheat/60 space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-natural-espresso flex items-center gap-1.5">
+                            <Database className="h-3.5 w-3.5 text-natural-clay" />
+                            <span>สถานะฐานข้อมูลถาวร (Database Storage)</span>
+                          </span>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 ${
+                            dbStatus?.postgresActive
+                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                              : 'bg-amber-100 text-amber-800 border border-amber-300'
+                          }`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${dbStatus?.postgresActive ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+                            {dbStatus?.postgresActive ? 'PostgreSQL เชื่อมต่อสำเร็จ 🟢' : 'Local Persistent Storage Mode 🟡'}
+                          </span>
+                        </div>
+                        <p className="text-[10.5px] text-natural-espresso/60 leading-relaxed">
+                          {dbStatus?.postgresActive
+                            ? '✅ ข้อมูลออเดอร์, การตั้งค่า และผู้ใช้งานถูกจัดเก็บบน PostgreSQL อย่างถาวร 100% (แม้ปิดเซิร์ฟเวอร์หรือ Refresh ข้อมูลจะไม่หาย)'
+                            : 'ℹ️ ระบบใช้งานโหมด Local File Storage หากเชื่อมต่อ DATABASE_URL บน Render ข้อมูลจะซิงค์เข้า PostgreSQL อัตโนมัติ'}
+                        </p>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-natural-espresso/70 mb-1.5 flex items-center space-x-1">
+                          <Phone className="h-3 w-3 text-natural-clay" />
+                          <span>เบอร์โทรศัพท์ห้องเสื้อ (Atelier Phone Number)</span>
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={boutiquePhone}
+                          onChange={(e) => handleUpdateBoutiquePhone(e.target.value)}
+                          placeholder="เช่น 086-555-1234"
+                          className="w-full text-sm px-3 py-2.5 rounded-xl border border-natural-wheat focus:outline-none focus:ring-2 focus:ring-natural-clay/20 focus:border-natural-clay bg-white text-natural-espresso font-semibold"
+                        />
+                        <p className="text-[10px] text-natural-espresso/45 mt-1 leading-relaxed">
+                          * เบอร์โทรศัพท์นี้จะถูกนำไปใช้อัปเดตข้อมูลการติดต่อในใบเสร็จรับเงิน, เอกสารพิมพ์ใบออเดอร์ และปุ่มสำหรับลูกค้าเพื่อ "โทรติดต่อห้องเสื้อ" อัตโนมัติ
+                        </p>
+                      </div>
+
+                      {/* Company Logo Setting */}
+                      <div className="pt-3 border-t border-natural-wheat/50 space-y-2">
+                        <label className="block text-xs font-bold text-natural-espresso/80 flex items-center justify-between">
+                          <span className="flex items-center space-x-1.5">
+                            <ImageIcon className="h-3.5 w-3.5 text-natural-clay" />
+                            <span>โลโก้บริษัท / โลโก้ห้องเสื้อ (Company Logo)</span>
+                          </span>
+                          {boutiqueLogo && (
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateBoutiqueLogo('')}
+                              className="text-[11px] text-rose-600 hover:text-rose-700 font-bold flex items-center gap-1 cursor-pointer"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                              <span>ลบโลโก้ / คืนค่าเริ่มต้น</span>
+                            </button>
+                          )}
+                        </label>
+
+                        <div className="flex items-center gap-3 bg-natural-sand/20 p-3 rounded-2xl border border-natural-wheat/60">
+                          <div className="h-14 w-14 rounded-2xl bg-white border border-natural-wheat/80 flex items-center justify-center p-1 shadow-2xs overflow-hidden shrink-0">
+                            {boutiqueLogo ? (
+                              <img
+                                src={boutiqueLogo}
+                                alt="Company Logo Preview"
+                                className="h-full w-full object-contain"
+                                referrerPolicy="no-referrer"
+                              />
+                            ) : (
+                              <div className="flex flex-col items-center justify-center text-natural-espresso/30 text-center">
+                                <Store className="h-6 w-6 text-natural-ochre" />
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="flex-1 space-y-1.5">
+                            <label className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-natural-espresso hover:bg-natural-clay text-white text-xs font-bold rounded-xl cursor-pointer transition-all shadow-2xs">
+                              <Upload className="h-3.5 w-3.5 text-natural-ochre" />
+                              <span>อัปโหลดรูปภาพโลโก้</span>
+                              <input
+                                type="file"
+                                accept="image/png, image/jpeg, image/webp, image/svg+xml"
+                                className="hidden"
+                                onChange={(e) => {
+                                  const f = e.target.files?.[0];
+                                  if (f) handleLogoFileUpload(f);
+                                }}
+                              />
+                            </label>
+                            <p className="text-[10px] text-natural-espresso/50 leading-tight">
+                              รองรับไฟล์ PNG (พื้นหลังโปร่งใส), JPG, SVG, WebP ระบบจะปรับขนาดและแสดงผลทันที
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Sound Notification Setting */}
+                      <div className="pt-3 border-t border-natural-wheat/50 space-y-2">
+                        <label className="block text-xs font-bold text-natural-espresso/80 flex items-center justify-between">
+                          <span className="flex items-center space-x-1">
+                            <Bell className="h-3.5 w-3.5 text-amber-600" />
+                            <span>เปิดเสียงแจ้งเตือนออเดอร์ใหม่ (Sound Alert)</span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const next = !soundEnabled;
+                              setSoundEnabled(next);
+                              localStorage.setItem('nunuh_sound_enabled', String(next));
+                              if (next) playNewOrderSound();
+                            }}
+                            className={`px-2.5 py-1 text-[11px] font-bold rounded-lg border transition-all cursor-pointer ${
+                              soundEnabled ? 'bg-amber-100 text-amber-900 border-amber-300' : 'bg-gray-100 text-gray-500 border-gray-200'
+                            }`}
+                          >
+                            {soundEnabled ? '🔔 เปิดใช้งาน' : '🔕 ปิดเสียง'}
+                          </button>
+                        </label>
+                        <div className="flex justify-between items-center bg-amber-50/50 p-2.5 rounded-xl border border-amber-100">
+                          <span className="text-[10.5px] text-amber-900 font-medium">ทดสอบระบบเสียงกระดิ่งแจ้งเตือน:</span>
+                          <button
+                            type="button"
+                            onClick={() => playNewOrderSound()}
+                            className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-lg shadow-2xs transition-all cursor-pointer flex items-center gap-1"
+                          >
+                            <Volume2 className="h-3 w-3" />
+                            <span>ทดลองฟังเสียง</span>
+                          </button>
+                        </div>
+                      </div>
                     </div>
-                    <p className="text-[10.5px] text-natural-espresso/60 leading-relaxed">
-                      {dbStatus?.postgresActive
-                        ? '✅ ข้อมูลออเดอร์, การตั้งค่า และผู้ใช้งานถูกจัดเก็บบน PostgreSQL อย่างถาวร 100% (แม้ปิดเซิร์ฟเวอร์หรือ Refresh ข้อมูลจะไม่หาย)'
-                        : 'ℹ️ ระบบใช้งานโหมด Local File Storage หากเชื่อมต่อ DATABASE_URL บน Render ข้อมูลจะซิงค์เข้า PostgreSQL อัตโนมัติ'}
-                    </p>
-                  </div>
+                  )}
 
-                  <div>
-                    <label className="block text-xs font-bold text-natural-espresso/70 mb-1.5 flex items-center space-x-1">
-                      <Phone className="h-3 w-3 text-natural-clay" />
-                      <span>เบอร์โทรศัพท์ห้องเสื้อ (Atelier Phone Number)</span>
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={boutiquePhone}
-                      onChange={(e) => handleUpdateBoutiquePhone(e.target.value)}
-                      placeholder="เช่น 086-555-1234"
-                      className="w-full text-sm px-3 py-2.5 rounded-xl border border-natural-wheat focus:outline-none focus:ring-2 focus:ring-natural-clay/20 focus:border-natural-clay bg-white text-natural-espresso font-semibold"
-                    />
-                    <p className="text-[10px] text-natural-espresso/45 mt-1 leading-relaxed">
-                      * เบอร์โทรศัพท์นี้จะถูกนำไปใช้อัปเดตข้อมูลการติดต่อในใบเสร็จรับเงิน, เอกสารพิมพ์ใบออเดอร์ และปุ่มสำหรับลูกค้าเพื่อ "โทรติดต่อห้องเสื้อ" อัตโนมัติ
-                    </p>
-                  </div>
+                  {settingsTab === 'line' && (
+                    <div className="space-y-4">
+                      {/* Connection Diagnostic Banner */}
+                      <div className={`p-3.5 rounded-2xl border ${
+                        lineConfigStatus?.tokenSet
+                          ? 'bg-emerald-50 border-emerald-200 text-emerald-950'
+                          : 'bg-amber-50 border-amber-200 text-amber-950'
+                      }`}>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <div className="flex items-center gap-2 font-bold text-xs">
+                            <span className="text-base">{lineConfigStatus?.tokenSet ? '🟢' : '🟡'}</span>
+                            <span>
+                              {lineConfigStatus?.tokenSet
+                                ? 'LINE Messaging API เชื่อมต่อสำเร็จ (พร้อมส่งแจ้งเตือนอัตโนมัติ)'
+                                : 'ยังไม่ได้เชื่อมต่อ LINE Channel Access Token (โหมดแมนนวล/จำลอง)'}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={fetchLineConfigStatus}
+                            className="text-[10.5px] font-bold text-emerald-800 hover:underline flex items-center gap-1 cursor-pointer"
+                          >
+                            <RefreshCw className="h-3 w-3" />
+                            <span>รีเฟรชสถานะ</span>
+                          </button>
+                        </div>
+                        <p className="text-[11px] leading-relaxed opacity-90">
+                          {lineConfigStatus?.tokenSet
+                            ? 'ระบบพร้อมส่งข้อความแจ้งเตือนสถานะชุดสั่งตัดเข้า LINE แชทของลูกค้าโดยตรงเมื่อมีการอัปเดตสถานะในระบบ'
+                            : 'เมื่อใส่ Channel Access Token ด้านล่างนี้ ระบบจะสามารถยิง Push Message เข้าแอป LINE ของลูกค้าและเจ้าของร้านได้โดยตรง 100%'}
+                        </p>
+                      </div>
 
-                  {/* Company Logo Setting */}
-                  <div className="pt-3 border-t border-natural-wheat/50 space-y-2">
-                    <label className="block text-xs font-bold text-natural-espresso/80 flex items-center justify-between">
-                      <span className="flex items-center space-x-1.5">
-                        <ImageIcon className="h-3.5 w-3.5 text-natural-clay" />
-                        <span>โลโก้บริษัท / โลโก้ห้องเสื้อ (Company Logo)</span>
-                      </span>
-                      {boutiqueLogo && (
-                        <button
-                          type="button"
-                          onClick={() => handleUpdateBoutiqueLogo('')}
-                          className="text-[11px] text-rose-600 hover:text-rose-700 font-bold flex items-center gap-1 cursor-pointer"
-                        >
-                          <Trash2 className="h-3 w-3" />
-                          <span>ลบโลโก้ / คืนค่าเริ่มต้น</span>
-                        </button>
-                      )}
-                    </label>
-
-                    <div className="flex items-center gap-3 bg-natural-sand/20 p-3 rounded-2xl border border-natural-wheat/60">
-                      <div className="h-14 w-14 rounded-2xl bg-white border border-natural-wheat/80 flex items-center justify-center p-1 shadow-2xs overflow-hidden shrink-0">
-                        {boutiqueLogo ? (
-                          <img
-                            src={boutiqueLogo}
-                            alt="Company Logo Preview"
-                            className="h-full w-full object-contain"
-                            referrerPolicy="no-referrer"
+                      {/* Webhook URL Copy Box */}
+                      <div className="bg-natural-sand/30 p-3 rounded-2xl border border-natural-wheat/70 space-y-1.5">
+                        <label className="block text-xs font-bold text-natural-espresso flex items-center justify-between">
+                          <span className="flex items-center gap-1.5">
+                            <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
+                            <span>LINE Webhook URL (นำไปใส่ใน LINE Developers Console)</span>
+                          </span>
+                          <span className="text-[10px] text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-md font-bold">
+                            Endpoint พร้อมใช้งาน
+                          </span>
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            readOnly
+                            value={lineConfigStatus?.webhookUrl || `${window.location.origin}/api/webhook/line`}
+                            className="w-full text-xs font-mono bg-white px-3 py-2 rounded-xl border border-natural-wheat select-all text-natural-espresso font-semibold"
                           />
-                        ) : (
-                          <div className="flex flex-col items-center justify-center text-natural-espresso/30 text-center">
-                            <Store className="h-6 w-6 text-natural-ochre" />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const url = lineConfigStatus?.webhookUrl || `${window.location.origin}/api/webhook/line`;
+                              navigator.clipboard.writeText(url);
+                              setCopiedWebhook(true);
+                              setTimeout(() => setCopiedWebhook(false), 2000);
+                            }}
+                            className="shrink-0 px-3 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold flex items-center gap-1 transition-all cursor-pointer shadow-xs"
+                          >
+                            {copiedWebhook ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                            <span>{copiedWebhook ? 'คัดลอกแล้ว!' : 'คัดลอก'}</span>
+                          </button>
+                        </div>
+                        <p className="text-[10px] text-natural-espresso/60 leading-tight">
+                          * นำ URL นี้ไปวางใน Messaging API &gt; Webhook URL บน <a href="https://developers.line.biz/" target="_blank" rel="noopener noreferrer" className="text-emerald-700 underline font-bold inline-flex items-center gap-0.5">LINE Developers <ExternalLink className="h-2.5 w-2.5" /></a> และกดเปิด <strong>"Use webhook"</strong>
+                        </p>
+                      </div>
+
+                      {/* LINE Channel Access Token */}
+                      <div className="space-y-1">
+                        <label className="block text-xs font-bold text-natural-espresso/80 flex items-center space-x-1.5">
+                          <Key className="h-3.5 w-3.5 text-emerald-600" />
+                          <span>LINE Channel Access Token (Long-lived)</span>
+                        </label>
+                        <textarea
+                          rows={2}
+                          value={lineChannelAccessToken}
+                          onChange={(e) => setLineChannelAccessToken(e.target.value)}
+                          placeholder="วาง Channel Access Token ที่ได้จาก LINE Developers ที่นี่ (เช่น e8x8a9B...)"
+                          className="w-full text-xs font-mono px-3 py-2 rounded-xl border border-natural-wheat focus:outline-none focus:ring-2 focus:ring-emerald-500/20 bg-white text-natural-espresso"
+                        />
+                        <p className="text-[10px] text-natural-espresso/50">
+                          * หาได้จาก LINE Developers Console &gt; Channel Settings &gt; แท็บ <strong>Messaging API</strong> &gt; ด้านล่างสุดกด Issue "Channel access token (long-lived)"
+                        </p>
+                      </div>
+
+                      {/* LINE Channel Secret */}
+                      <div className="space-y-1">
+                        <label className="block text-xs font-bold text-natural-espresso/80 flex items-center space-x-1.5">
+                          <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
+                          <span>LINE Channel Secret (สำหรับตรวจสอบ Signature Webhook)</span>
+                        </label>
+                        <input
+                          type="password"
+                          value={lineChannelSecret}
+                          onChange={(e) => setLineChannelSecret(e.target.value)}
+                          placeholder="เช่น 7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d"
+                          className="w-full text-xs font-mono px-3 py-2 rounded-xl border border-natural-wheat focus:outline-none focus:ring-2 focus:ring-emerald-500/20 bg-white text-natural-espresso"
+                        />
+                        <p className="text-[10px] text-natural-espresso/50">
+                          * หาได้จาก LINE Developers Console &gt; Channel Settings &gt; แท็บ <strong>Basic settings</strong> &gt; Channel secret
+                        </p>
+                      </div>
+
+                      {/* LINE OA ID & Chat URL */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <label className="block text-xs font-bold text-natural-espresso/80">LINE OA ID (Basic ID)</label>
+                          <input
+                            type="text"
+                            value={lineOaId}
+                            onChange={(e) => setLineOaId(e.target.value)}
+                            placeholder="เช่น @237aynfq"
+                            className="w-full text-xs px-3 py-2 rounded-xl border border-natural-wheat bg-white font-bold text-emerald-900"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="block text-xs font-bold text-natural-espresso/80">LINE User ID เจ้าของร้าน (รับแจ้งเตือน)</label>
+                          <input
+                            type="text"
+                            value={ownerLineUserId}
+                            onChange={(e) => setOwnerLineUserId(e.target.value)}
+                            placeholder="เช่น Uf150dba359d9..."
+                            className="w-full text-xs font-mono px-3 py-2 rounded-xl border border-natural-wheat bg-white text-rose-950 font-bold"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Live LINE Connection Push Tester */}
+                      <div className="p-3.5 rounded-2xl bg-emerald-50/60 border border-emerald-200 space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-emerald-950 flex items-center gap-1.5">
+                            <span>🧪</span>
+                            <span>เครื่องมือทดสอบส่งแจ้งเตือนเข้า LINE (Test Push Message)</span>
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            value={testPushUserId}
+                            onChange={(e) => setTestPushUserId(e.target.value)}
+                            placeholder="ใส่ LINE User ID ของคุณเพื่อทดสอบ (ขึ้นต้นด้วย U...)"
+                            className="flex-1 text-xs font-mono px-3 py-2 rounded-xl border border-emerald-300 bg-white text-emerald-950"
+                          />
+                          <button
+                            type="button"
+                            disabled={isTestingPush}
+                            onClick={handleTestPushMessage}
+                            className="px-3.5 py-2 bg-emerald-700 hover:bg-emerald-800 disabled:bg-emerald-400 text-white font-bold text-xs rounded-xl shadow-xs transition-all cursor-pointer flex items-center gap-1.5 shrink-0"
+                          >
+                            {isTestingPush ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                            <span>{isTestingPush ? 'กำลังส่ง...' : 'ทดสอบส่ง'}</span>
+                          </button>
+                        </div>
+                        {testPushResult && (
+                          <div className={`p-2.5 rounded-xl text-xs ${
+                            testPushResult.success ? 'bg-emerald-100 text-emerald-900 border border-emerald-300' : 'bg-rose-100 text-rose-900 border border-rose-300'
+                          }`}>
+                            <p className="font-bold">{testPushResult.msg}</p>
+                            {testPushResult.tip && (
+                              <p className="text-[11px] mt-1 opacity-90 leading-tight">💡 {testPushResult.tip}</p>
+                            )}
                           </div>
                         )}
                       </div>
 
-                      <div className="flex-1 space-y-1.5">
-                        <label className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-natural-espresso hover:bg-natural-clay text-white text-xs font-bold rounded-xl cursor-pointer transition-all shadow-2xs">
-                          <Upload className="h-3.5 w-3.5 text-natural-ochre" />
-                          <span>อัปโหลดรูปภาพโลโก้</span>
-                          <input
-                            type="file"
-                            accept="image/png, image/jpeg, image/webp, image/svg+xml"
-                            className="hidden"
-                            onChange={(e) => {
-                              const f = e.target.files?.[0];
-                              if (f) handleLogoFileUpload(f);
-                            }}
-                          />
-                        </label>
-                        <p className="text-[10px] text-natural-espresso/50 leading-tight">
-                          รองรับไฟล์ PNG (พื้นหลังโปร่งใส), JPG, SVG, WebP ระบบจะปรับขนาดและแสดงผลทันที
+                      {/* Thai Setup Guide Accordion/Notes */}
+                      <div className="bg-natural-sand/20 p-3 rounded-2xl border border-natural-wheat/60 space-y-2 text-[11px] text-natural-espresso/80">
+                        <p className="font-bold text-natural-espresso flex items-center gap-1">
+                          <HelpCircle className="h-3.5 w-3.5 text-natural-clay" />
+                          <span>สรุป 3 ขั้นตอนเพื่อให้ระบบแจ้งเตือนเข้า LINE ลูกค้าอัตโนมัติ 100%:</span>
                         </p>
+                        <ol className="list-decimal list-inside space-y-1 text-[10.5px] leading-relaxed text-natural-espresso/70">
+                          <li><strong>ตั้งค่า Webhook:</strong> นำ Webhook URL ด้านบนไปใส่ใน LINE Developers Console และเปิดใช้งาน Webhook</li>
+                          <li><strong>เปิดสิทธิ์ใน LINE OA:</strong> เข้า <a href="https://manager.line.biz/" target="_blank" rel="noopener noreferrer" className="text-emerald-700 underline font-bold">manager.line.biz</a> &gt; ตั้งค่า &gt; ตั้งค่าการตอบกลับ &gt; เลือก <strong>เปิด "Webhook"</strong> และ <strong>เปิด "แชท"</strong></li>
+                          <li><strong>บันทึก Token:</strong> นำ Channel Access Token มาวางในหน้านี้ แล้วกด "บันทึกตั้งค่า"</li>
+                        </ol>
                       </div>
                     </div>
-                  </div>
+                  )}
 
-                  {/* Sound Notification Setting */}
-                  <div className="pt-3 border-t border-natural-wheat/50 space-y-2">
-                    <label className="block text-xs font-bold text-natural-espresso/80 flex items-center justify-between">
-                      <span className="flex items-center space-x-1">
-                        <Bell className="h-3.5 w-3.5 text-amber-600" />
-                        <span>เปิดเสียงแจ้งเตือนออเดอร์ใหม่ (Sound Alert)</span>
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const next = !soundEnabled;
-                          setSoundEnabled(next);
-                          localStorage.setItem('nunuh_sound_enabled', String(next));
-                          if (next) playNewOrderSound();
-                        }}
-                        className={`px-2.5 py-1 text-[11px] font-bold rounded-lg border transition-all cursor-pointer ${
-                          soundEnabled ? 'bg-amber-100 text-amber-900 border-amber-300' : 'bg-gray-100 text-gray-500 border-gray-200'
-                        }`}
-                      >
-                        {soundEnabled ? '🔔 เปิดใช้งาน' : '🔕 ปิดเสียง'}
-                      </button>
-                    </label>
-                    <div className="flex justify-between items-center bg-amber-50/50 p-2.5 rounded-xl border border-amber-100">
-                      <span className="text-[10.5px] text-amber-900 font-medium">ทดสอบระบบเสียงกระดิ่งแจ้งเตือน:</span>
-                      <button
-                        type="button"
-                        onClick={() => playNewOrderSound()}
-                        className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-lg shadow-2xs transition-all cursor-pointer flex items-center gap-1"
-                      >
-                        <Volume2 className="h-3 w-3" />
-                        <span>ทดลองฟังเสียง</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Owner LINE ID Setting */}
-                  <div className="pt-3 border-t border-natural-wheat/50 space-y-1.5">
-                    <label className="block text-xs font-bold text-natural-espresso/80 flex items-center space-x-1">
-                      <AlertTriangle className="h-3.5 w-3.5 text-rose-600" />
-                      <span>LINE User ID เจ้าของร้าน (รับแจ้งเตือนออเดอร์เกินกำหนด)</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={ownerLineUserId}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setOwnerLineUserId(val);
-                        localStorage.setItem('nunuh_owner_line_user_id', val);
-                        fetch('/api/settings', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ ownerLineUserId: val })
-                        }).catch(() => {});
-                      }}
-                      placeholder="เช่น Uf150dba359d90219f8d..."
-                      className="w-full text-xs px-3 py-2.5 rounded-xl border border-natural-wheat focus:outline-none focus:ring-2 focus:ring-rose-500/20 bg-white font-mono text-rose-950 font-bold"
-                    />
-                    <p className="text-[10px] text-natural-espresso/50 leading-relaxed">
-                      * ใส่ LINE User ID ของเจ้าของร้าน เพื่อให้ระบบสามารถส่งสรุปออเดอร์ที่เกินกำหนดวันส่งมอบเข้า LINE ส่วนตัวได้
-                    </p>
-                  </div>
-
-                  <div className="pt-3 border-t border-natural-wheat/50 flex justify-end space-x-2">
+                  <div className="pt-3 border-t border-natural-wheat/50 flex justify-end space-x-2 shrink-0">
                     <button
                       type="button"
                       onClick={() => {
@@ -2059,9 +2394,10 @@ export default function App() {
                     </button>
                     <button
                       type="submit"
-                      className="px-5 py-2 text-xs font-bold text-white bg-natural-clay hover:bg-natural-clay-dark rounded-xl transition-all cursor-pointer shadow-xs"
+                      className="px-5 py-2 text-xs font-bold text-white bg-natural-clay hover:bg-natural-clay-dark rounded-xl transition-all cursor-pointer shadow-xs flex items-center gap-1.5"
                     >
-                      บันทึกตั้งค่า
+                      <Check className="h-3.5 w-3.5" />
+                      <span>บันทึกตั้งค่าทั้งหมด</span>
                     </button>
                   </div>
                 </form>

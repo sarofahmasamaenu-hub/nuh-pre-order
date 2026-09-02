@@ -654,10 +654,34 @@ app.post("/api/reviews", async (req, res) => {
   }
 });
 
+// Helper to get effective LINE Messaging API configuration from Environment or Database Settings
+async function getEffectiveLineConfig(req?: any) {
+  const settings = await readSettingsOnServer();
+  const token = (process.env.LINE_CHANNEL_ACCESS_TOKEN || settings.lineChannelAccessToken || "").trim();
+  const secret = (process.env.LINE_CHANNEL_SECRET || settings.lineChannelSecret || "").trim();
+  const oaId = (settings.lineOaId || process.env.LINE_OA_ID || "@237aynfq").trim();
+  const host = req ? (req.get('x-forwarded-host') || req.get('host')) : '';
+  const proto = req ? (req.get('x-forwarded-proto') || 'https') : 'https';
+  const rawBaseUrl = lastKnownPublicUrl || process.env.PUBLIC_APP_URL || (host ? `${proto}://${host}` : '');
+  const cleanBase = (rawBaseUrl || '').replace(/\/+$/, '');
+  const webhookUrl = cleanBase ? `${cleanBase}/api/webhook/line` : '/api/webhook/line';
+  
+  return {
+    token,
+    secret,
+    oaId,
+    webhookUrl,
+    hasToken: Boolean(token),
+    hasSecret: Boolean(secret),
+    source: process.env.LINE_CHANNEL_ACCESS_TOKEN ? 'env' : (settings.lineChannelAccessToken ? 'settings' : 'none')
+  };
+}
+
 // API Endpoint to send status push message directly to a user
 app.post("/api/send-status", async (req: any, res) => {
   let { userId, orderId, orderNumber, customerPhone, message } = req.body || {};
-  const LINE_CHANNEL_ACCESS_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN || "";
+  const lineConfig = await getEffectiveLineConfig(req);
+  const LINE_CHANNEL_ACCESS_TOKEN = lineConfig.token;
 
   // If userId is not provided, look up from orders
   if (!userId && (orderId || orderNumber || customerPhone)) {
@@ -685,6 +709,7 @@ app.post("/api/send-status", async (req: any, res) => {
       success: true, 
       simulated: true, 
       hasUserId: false,
+      hasToken: Boolean(LINE_CHANNEL_ACCESS_TOKEN),
       message: "ไม่พบ LINE User ID ของลูกค้ารายนี้ (ระบบได้คัดลอกข้อความเพื่อเปิดส่งในแผงแชทให้ค่ะ)" 
     });
   }
@@ -695,7 +720,8 @@ app.post("/api/send-status", async (req: any, res) => {
       success: true, 
       simulated: true, 
       hasUserId: true,
-      message: "LINE_CHANNEL_ACCESS_TOKEN not set. Simulating success." 
+      hasToken: false,
+      message: "ยังไม่ได้ระบุ LINE Channel Access Token ในการตั้งค่า (ระบบคัดลอกข้อความพร้อมเปิดแชทให้แล้วค่ะ)" 
     });
   }
 
@@ -719,15 +745,78 @@ app.post("/api/send-status", async (req: any, res) => {
 
     if (response.ok) {
       console.log(`✅ Push message sent successfully to User ID: ${userId}`);
-      return res.json({ success: true, hasUserId: true });
+      return res.json({ success: true, hasUserId: true, hasToken: true, simulated: false });
     } else {
       const errText = await response.text();
       console.error(`❌ Failed to send push message to LINE: ${errText}`);
-      return res.status(response.status).json({ error: errText, hasUserId: true });
+      return res.status(response.status).json({ error: errText, hasUserId: true, hasToken: true });
     }
   } catch (err: any) {
     console.error("❌ Error sending push message:", err);
     return res.status(500).json({ error: err.message || "Internal server error" });
+  }
+});
+
+// API Endpoint to test LINE Push Message directly
+app.post("/api/test-line-push", async (req: any, res) => {
+  const { targetUserId, testMessage } = req.body || {};
+  const lineConfig = await getEffectiveLineConfig(req);
+  const token = lineConfig.token;
+
+  if (!token) {
+    return res.status(400).json({
+      success: false,
+      error: "ยังไม่ได้ระบุ LINE Channel Access Token ในระบบ กรุณาระบุในหน้าต่างตั้งค่าก่อนนะคะ"
+    });
+  }
+
+  if (!targetUserId || !targetUserId.trim()) {
+    return res.status(400).json({
+      success: false,
+      error: "กรุณาระบุ LINE User ID ของผู้รับ (ขึ้นต้นด้วยตัว U เช่น Uf150dba359d90219f8d...)"
+    });
+  }
+
+  const msgToSend = (testMessage || `⚜️ ทดสอบการเชื่อมต่อ LINE Messaging API สำเร็จ! ⚜️\nระบบห้องเสื้อ NUNUH Boutique เชื่อมต่อกับ LINE บอทเรียบร้อยแล้วค่ะ ✨`).trim();
+
+  try {
+    const response = await fetch("https://api.line.me/v2/bot/message/push", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        to: targetUserId.trim(),
+        messages: [{ type: "text", text: msgToSend }]
+      })
+    });
+
+    if (response.ok) {
+      console.log(`✅ Test push message successfully delivered to: ${targetUserId}`);
+      return res.json({
+        success: true,
+        targetUserId,
+        message: "ส่งข้อความทดสอบสำเร็จเรียบร้อยแล้วค่ะ! กรุณาตรวจสอบในแอป LINE ของท่าน"
+      });
+    } else {
+      const errText = await response.text();
+      console.error(`❌ LINE Test Push API Error: ${errText}`);
+      return res.status(response.status).json({
+        success: false,
+        error: errText,
+        helpTip: errText.includes("Invalid reply token") || errText.includes("Not found") 
+          ? "ไม่พบผู้ใช้รายนี้ (ผู้ใช้ต้องเคยเพิ่มเพื่อนกับ LINE Official Account ของทางร้านก่อนนะคะ)"
+          : errText.includes("Authentication failed") || errText.includes("Invalid access token")
+          ? "Channel Access Token ไม่ถูกต้องหรือหมดอายุ กรุณา Issue Token ใหม่จาก LINE Developers Console ค่ะ"
+          : "การส่งข้อความขัดข้องจาก LINE API"
+      });
+    }
+  } catch (err: any) {
+    return res.status(500).json({
+      success: false,
+      error: err.message || "Failed to reach LINE API"
+    });
   }
 });
 
@@ -793,7 +882,8 @@ app.post("/api/send-overdue-line-alert", async (req: any, res) => {
     });
   }
 
-  const LINE_CHANNEL_ACCESS_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN || "";
+  const lineConfig = await getEffectiveLineConfig(req);
+  const LINE_CHANNEL_ACCESS_TOKEN = lineConfig.token;
   if (!LINE_CHANNEL_ACCESS_TOKEN) {
     console.warn("⚠️ LINE_CHANNEL_ACCESS_TOKEN not set, simulating overdue push message.");
     return res.json({
@@ -801,7 +891,7 @@ app.post("/api/send-overdue-line-alert", async (req: any, res) => {
       simulated: true,
       overdueCount: overdueOrders.length,
       messageText: msgText,
-      message: "ระบบจำลองการส่งสำเร็จ (ยังไม่ได้ใส่ LINE_CHANNEL_ACCESS_TOKEN)"
+      message: "ระบบจำลองการส่งสำเร็จ (ยังไม่ได้ใส่ LINE Channel Access Token)"
     });
   }
 
@@ -841,10 +931,14 @@ app.post("/api/send-overdue-line-alert", async (req: any, res) => {
 });
 
 // API Endpoint to check LINE Messaging API configuration status
-app.get("/api/line-config-status", (req, res) => {
+app.get("/api/line-config-status", async (req, res) => {
+  const lineConfig = await getEffectiveLineConfig(req);
   res.json({
-    tokenSet: !!(process.env.LINE_CHANNEL_ACCESS_TOKEN || "").trim(),
-    secretSet: !!(process.env.LINE_CHANNEL_SECRET || "").trim(),
+    tokenSet: lineConfig.hasToken,
+    secretSet: lineConfig.hasSecret,
+    lineOaId: lineConfig.oaId,
+    webhookUrl: lineConfig.webhookUrl,
+    source: lineConfig.source
   });
 });
 
@@ -860,8 +954,9 @@ app.get(["/api/webhook/line", "/webhook/line", "/api/line/webhook", "/api/line-w
 
 app.post(["/api/webhook/line", "/webhook/line", "/api/line/webhook", "/api/line-webhook"], async (req: any, res) => {
   try {
-    const LINE_CHANNEL_SECRET = process.env.LINE_CHANNEL_SECRET || "";
-    const LINE_CHANNEL_ACCESS_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN || "";
+    const lineConfig = await getEffectiveLineConfig(req);
+    const LINE_CHANNEL_SECRET = (lineConfig.secret || process.env.LINE_CHANNEL_SECRET || "").trim();
+    const LINE_CHANNEL_ACCESS_TOKEN = (lineConfig.token || process.env.LINE_CHANNEL_ACCESS_TOKEN || "").trim();
 
     const signature = req.headers['x-line-signature'] as string;
     const bodyString = req.rawBody || JSON.stringify(req.body);
