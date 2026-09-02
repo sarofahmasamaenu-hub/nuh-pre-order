@@ -321,52 +321,74 @@ export default function CustomerPortal({
   };
 
   // Helper function to search across orders and return all orders for the matched customer
-  const performSearch = (queryStr: string, allOrders: Order[]) => {
+  const performSearch = (queryStr: string, allOrders?: Order[]) => {
+    let sourceOrders = allOrders && allOrders.length > 0 ? allOrders : orders;
+    
+    // If still empty, fallback to localStorage
+    if (!sourceOrders || sourceOrders.length === 0) {
+      try {
+        const saved = localStorage.getItem('nunuh_orders');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            sourceOrders = parsed;
+          }
+        }
+      } catch (e) {}
+    }
+
     const query = (queryStr || '').trim().toLowerCase();
     const queryDigits = query.replace(/\D/g, '');
-    const cleanQuery = query.replace(/[\s-()]/g, '');
+    const cleanQuery = query.replace(/[\s-()#_]/g, '');
 
     if (!query) {
       return { matchedOrders: null, searched: false, isCustomerIdentified: false };
     }
 
-    // Normalize search query: remove Thai title prefixes (คุณ, นางสาว, น.ส., นาง, นาย, ด.ญ., ด.ช., พี่, น้อง)
-    const strippedTitleQuery = query.replace(/^(คุณ|นางสาว|น\.ส\.|นาง|นาย|ด\.ญ\.|ด\.ช\.|พี่|น้อง)\s*/i, '').trim();
-    const cleanStrippedQuery = strippedTitleQuery.replace(/[- \s\t\n()]/g, '');
+    // Normalize search query: remove Thai title prefixes (คุณ, นางสาว, น.ส., นาง, นาย, ด.ญ., ด.ช., พี่, น้อง, ช่าง, ลูกค้า)
+    const strippedTitleQuery = query.replace(/^(คุณ|นางสาว|น\.ส\.|นาง|นาย|ด\.ญ\.|ด\.ช\.|พี่|น้อง|ช่าง|ลูกค้า)\s*/i, '').trim();
+    const cleanStrippedQuery = strippedTitleQuery.replace(/[- \s\t\n()#_]/g, '');
 
-    const matched = allOrders.filter(order => {
+    const matched = (sourceOrders || []).filter(order => {
       if (!order) return false;
       const phoneDigits = (order.customerPhone || '').replace(/\D/g, '');
       const cleanPhone = (order.customerPhone || '').replace(/[\s-()]/g, '');
       const orderNum = (order.orderNumber || '').toLowerCase();
-      const cleanOrderNum = orderNum.replace(/[- \s]/g, '');
+      const cleanOrderNum = orderNum.replace(/[- \s#_]/g, '');
       const customerName = (order.customerName || '').toLowerCase();
-      const nameNoTitle = customerName.replace(/^(คุณ|นางสาว|น\.ส\.|นาง|นาย|ด\.ญ\.|ด\.ช\.|พี่|น้อง)\s*/i, '').trim();
+      const nameNoTitle = customerName.replace(/^(คุณ|นางสาว|น\.ส\.|นาง|นาย|ด\.ญ\.|ด\.ช\.|พี่|น้อง|ช่าง|ลูกค้า)\s*/i, '').trim();
       const nameNoSpaces = nameNoTitle.replace(/[- \s\t\n]/g, '');
       const customerNickname = (order.customerNickname || '').toLowerCase();
       const sku = (order.sku || '').toLowerCase();
       const lineUserId = (order.lineUserId || '').toLowerCase();
       const extOrderId = (order.externalOrderId || '').toLowerCase();
+      const dressType = (order.dressType || '').toLowerCase();
+      const fabricType = (order.fabricType || '').toLowerCase();
+      const tailorName = (order.tailorName || '').toLowerCase();
+      const branch = (order.branch || '').toLowerCase();
+      const idhNumber = (order.idhNumber || '').toLowerCase();
+      const notes = (order.notes || '').toLowerCase();
 
-      // 1. Phone number matching (exact or substring with 3+ digits)
+      // 1. Phone number matching (exact, substring, or digit matching)
       const matchesPhone = 
-        (queryDigits.length >= 3 && (phoneDigits.includes(queryDigits) || queryDigits.includes(phoneDigits))) ||
-        (cleanQuery.length >= 3 && cleanPhone.includes(cleanQuery));
+        (queryDigits.length >= 2 && (phoneDigits.includes(queryDigits) || queryDigits.includes(phoneDigits))) ||
+        (cleanQuery.length >= 2 && cleanPhone.includes(cleanQuery));
 
-      // 2. Order number / SKU / Line / Ext ID matching
+      // 2. Order number / SKU / Line / Ext ID / IDH matching
       const matchesOrderNum = 
         orderNum.includes(query) || 
-        (cleanQuery.length >= 2 && cleanOrderNum.includes(cleanQuery)) ||
+        (cleanQuery.length >= 1 && cleanOrderNum.includes(cleanQuery)) ||
         order.id?.toLowerCase() === query;
-      const matchesSku = sku && sku.includes(query);
+      const matchesSku = sku && (sku.includes(query) || (cleanQuery.length >= 2 && sku.replace(/[- \s]/g, '').includes(cleanQuery)));
       const matchesExtId = extOrderId && extOrderId.includes(query);
+      const matchesIdh = idhNumber && (idhNumber.includes(query) || idhNumber.includes(cleanQuery));
       const matchesLine = lineUserId && lineUserId === query;
 
       // 3. Customer name matching (full name, stripped title, without spaces)
       const matchesDirectName = 
         customerName.includes(query) || 
         (nameNoTitle && nameNoTitle.includes(strippedTitleQuery)) ||
-        (cleanStrippedQuery.length >= 2 && nameNoSpaces.includes(cleanStrippedQuery));
+        (cleanStrippedQuery.length >= 1 && nameNoSpaces.includes(cleanStrippedQuery));
 
       // 4. Customer nickname matching
       const matchesNickname = customerNickname && (
@@ -375,15 +397,39 @@ export default function CustomerPortal({
         query.includes(customerNickname)
       );
 
-      // 5. Word tokens matching (e.g. searching first name only or last name only)
-      const words = query.split(/\s+/).filter(w => w.length >= 2);
+      // 5. Dress & Fabric & Tailor & Branch & Notes matching
+      const matchesDress = dressType && (dressType.includes(query) || dressType.includes(strippedTitleQuery));
+      const matchesFabric = fabricType && fabricType.includes(query);
+      const matchesTailor = tailorName && (tailorName.includes(query) || tailorName.includes(strippedTitleQuery));
+      const matchesBranch = branch && branch.includes(query);
+      const matchesNotes = notes && notes.includes(query);
+
+      // 6. Word tokens matching (e.g. searching first name only or last name only)
+      const words = query.split(/[\s,+/]+/).filter(w => w.length >= 2);
       const matchesWords = words.length > 0 && words.some(w => 
         customerName.includes(w) || 
         nameNoTitle.includes(w) || 
-        (customerNickname && customerNickname.includes(w))
+        (customerNickname && customerNickname.includes(w)) ||
+        dressType.includes(w) ||
+        tailorName.includes(w)
       );
 
-      return matchesPhone || matchesOrderNum || matchesSku || matchesExtId || matchesLine || matchesDirectName || matchesNickname || matchesWords;
+      return (
+        matchesPhone || 
+        matchesOrderNum || 
+        matchesSku || 
+        matchesExtId || 
+        matchesIdh ||
+        matchesLine || 
+        matchesDirectName || 
+        matchesNickname || 
+        matchesDress || 
+        matchesFabric || 
+        matchesTailor || 
+        matchesBranch || 
+        matchesNotes || 
+        matchesWords
+      );
     });
 
     if (matched.length > 0) {
@@ -392,14 +438,14 @@ export default function CustomerPortal({
         matched.map(o => (o.customerPhone || '').replace(/\D/g, '')).filter(Boolean)
       );
       const matchedNames = new Set(
-        matched.map(o => (o.customerName || '').replace(/^(คุณ|นางสาว|น\.ส\.|นาง|นาย|ด\.ญ\.|ด\.ช\.|พี่|น้อง)\s*/i, '').replace(/[- \s\t\n]/g, '').toLowerCase()).filter(Boolean)
+        matched.map(o => (o.customerName || '').replace(/^(คุณ|นางสาว|น\.ส\.|นาง|นาย|ด\.ญ\.|ด\.ช\.|พี่|น้อง|ช่าง|ลูกค้า)\s*/i, '').replace(/[- \s\t\n]/g, '').toLowerCase()).filter(Boolean)
       );
       const matchedOrderIds = new Set(matched.map(o => o.id));
 
       // Retrieve ALL orders belonging to this customer
-      const allCustomerOrders = allOrders.filter(o => {
+      const allCustomerOrders = (sourceOrders || []).filter(o => {
         const pDigits = (o.customerPhone || '').replace(/\D/g, '');
-        const cNameNorm = (o.customerName || '').replace(/^(คุณ|นางสาว|น\.ส\.|นาง|นาย|ด\.ญ\.|ด\.ช\.|พี่|น้อง)\s*/i, '').replace(/[- \s\t\n]/g, '').toLowerCase();
+        const cNameNorm = (o.customerName || '').replace(/^(คุณ|นางสาว|น\.ส\.|นาง|นาย|ด\.ญ\.|ด\.ช\.|พี่|น้อง|ช่าง|ลูกค้า)\s*/i, '').replace(/[- \s\t\n]/g, '').toLowerCase();
         return (pDigits && matchedPhones.has(pDigits)) || (cNameNorm && matchedNames.has(cNameNorm)) || matchedOrderIds.has(o.id);
       });
 
@@ -419,14 +465,14 @@ export default function CustomerPortal({
 
   // Initial check from URL search parameters on mount & sync background order updates
   useEffect(() => {
-    if (!isInitialUrlCheckDone.current) {
-      const params = new URLSearchParams(window.location.search);
-      const urlSearchParam = params.get('search');
-      const urlPhoneParam = params.get('phone');
-      const actionParam = params.get('action');
-      const isReviewAction = actionParam === 'review' || params.get('review') === 'true';
-      const queryToUse = urlSearchParam || urlPhoneParam || '';
+    const params = new URLSearchParams(window.location.search);
+    const urlSearchParam = params.get('search');
+    const urlPhoneParam = params.get('phone');
+    const actionParam = params.get('action');
+    const isReviewAction = actionParam === 'review' || params.get('review') === 'true';
+    const queryToUse = urlSearchParam || urlPhoneParam || searchQuery || '';
 
+    if (!isInitialUrlCheckDone.current && (urlSearchParam || urlPhoneParam)) {
       if (queryToUse) {
         setSearchQuery(queryToUse);
         if (isReviewAction) {
@@ -457,7 +503,7 @@ export default function CustomerPortal({
         }
       }
       isInitialUrlCheckDone.current = true;
-    } else if (hasSearched && searchQuery.trim()) {
+    } else if (searchQuery.trim()) {
       if (isReviewOnlyMode && lockedOrderNumber) {
         const cleanQuery = lockedOrderNumber.trim().toLowerCase();
         const singleOrder = orders.find(o => o.orderNumber.toLowerCase() === cleanQuery || o.id === cleanQuery);
@@ -465,9 +511,10 @@ export default function CustomerPortal({
           setSearchedOrders([singleOrder]);
         }
       } else {
-        // Background order update (e.g. server poll): re-sync searched orders without wiping searchQuery
-        const { matchedOrders } = performSearch(searchQuery, orders);
+        // Background order update (e.g. server sync): re-sync searched orders without wiping query
+        const { matchedOrders, searched } = performSearch(searchQuery, orders);
         setSearchedOrders(matchedOrders);
+        if (searched) setHasSearched(true);
       }
     }
   }, [orders]);
@@ -715,32 +762,61 @@ export default function CustomerPortal({
               </button>
             </form>
 
-            {/* Quick search suggestions */}
-            <div className="flex items-center flex-wrap gap-2 text-xs text-natural-espresso/70 pt-1">
-              <span className="text-[11px] text-natural-espresso/50 font-medium">💡 คำค้นหายอดนิยม:</span>
-              {[
-                { label: 'คุณมัสยา มีสุข', query: 'คุณมัสยา มีสุข' },
-                { label: '0801462230', query: '0801462230' },
-                { label: 'ซารอฟะห์ มะสาแม', query: 'ซารอฟะห์' },
-                { label: '086-555-1234', query: '086-555-1234' },
-                { label: 'อนิษา บินหมัด', query: 'อนิษา' },
-                { label: 'NU-26008', query: 'NU-26008' }
-              ].map((chip, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => {
-                    setSearchQuery(chip.query);
-                    const { matchedOrders, searched } = performSearch(chip.query, orders);
-                    setSearchedOrders(matchedOrders);
-                    setHasSearched(searched);
-                  }}
-                  className="px-2.5 py-1 bg-stone-100 hover:bg-natural-sand/70 hover:text-natural-espresso text-natural-espresso/80 rounded-lg text-[11px] font-medium transition-all cursor-pointer border border-stone-200/60"
-                >
-                  {chip.label}
-                </button>
-              ))}
-            </div>
+            {/* Quick search suggestions from real orders in system */}
+            {(() => {
+              const sourceOrders = orders && orders.length > 0 ? orders : [];
+              const chips: { label: string; query: string }[] = [];
+              
+              sourceOrders.slice(0, 8).forEach(o => {
+                if (o.customerName && !chips.some(c => c.query === o.customerName)) {
+                  chips.push({ label: o.customerName, query: o.customerName });
+                }
+                if (o.customerPhone && !chips.some(c => c.query === o.customerPhone)) {
+                  chips.push({ label: o.customerPhone, query: o.customerPhone });
+                }
+                if (o.orderNumber && !chips.some(c => c.query === o.orderNumber)) {
+                  chips.push({ label: o.orderNumber, query: o.orderNumber });
+                }
+              });
+
+              return (
+                <div className="flex items-center flex-wrap gap-2 text-xs text-natural-espresso/70 pt-1">
+                  <span className="text-[11px] text-natural-espresso/50 font-medium">💡 คลิกค้นหาทันที:</span>
+                  {chips.length > 0 ? (
+                    chips.slice(0, 6).map((chip, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => {
+                          setSearchQuery(chip.query);
+                          const { matchedOrders, searched } = performSearch(chip.query, orders);
+                          setSearchedOrders(matchedOrders);
+                          setHasSearched(searched);
+                        }}
+                        className="px-2.5 py-1 bg-stone-100 hover:bg-natural-sand/70 hover:text-natural-espresso text-natural-espresso/80 rounded-lg text-[11px] font-medium transition-all cursor-pointer border border-stone-200/60"
+                      >
+                        {chip.label}
+                      </button>
+                    ))
+                  ) : (
+                    <span className="text-[11px] text-natural-espresso/40">พิมพ์ชื่อ เบอร์ หรือรหัสออเดอร์ในช่องค้นหา</span>
+                  )}
+                  {sourceOrders.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSearchQuery('');
+                        setSearchedOrders(sourceOrders);
+                        setHasSearched(true);
+                      }}
+                      className="px-2.5 py-1 bg-natural-sand/60 hover:bg-natural-sand text-natural-espresso font-bold rounded-lg text-[11px] transition-all cursor-pointer border border-natural-wheat"
+                    >
+                      📋 แสดงทุกออเดอร์ ({sourceOrders.length})
+                    </button>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         )}
 
@@ -760,6 +836,21 @@ export default function CustomerPortal({
                 <p className="text-xs sm:text-sm text-natural-espresso/70 leading-relaxed">
                   กรุณากรอก <strong className="text-natural-espresso underline">ชื่อลูกค้า</strong>, <strong className="text-natural-espresso underline">เบอร์โทรศัพท์มือถือ</strong> หรือ <strong className="text-natural-espresso underline">หมายเลขคิวออเดอร์</strong> ในช่องค้นหาด้านบน แล้วกดปุ่ม <strong>"ค้นหารายการออเดอร์"</strong> เพื่อดูข้อมูลการสั่งชุด สัดส่วนการวัดตัว และประวัติการตัดเย็บทั้งหมดของคุณค่ะ
                 </p>
+                {orders && orders.length > 0 && (
+                  <div className="pt-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSearchedOrders(orders);
+                        setHasSearched(true);
+                      }}
+                      className="px-5 py-2.5 bg-natural-espresso hover:bg-natural-clay text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer inline-flex items-center gap-1.5"
+                    >
+                      <Sparkles className="h-3.5 w-3.5 text-natural-ochre" />
+                      <span>เปิดดูรายการออเดอร์ทั้งหมดในระบบ ({orders.length} รายการ)</span>
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-2xl mx-auto pt-2 text-left">
@@ -2150,7 +2241,18 @@ export default function CustomerPortal({
                               📖 บันทึกไว้ในคลังประวัติความพึงพอใจของห้องเสื้อ NUNUH
                             </span>
                             
-                            <div className="flex items-center space-x-2.5">
+                            <div className="flex items-center flex-wrap gap-2.5">
+                              <a 
+                                href={`https://line.me/R/msg/text/?${encodeURIComponent(
+                                  `⚜️ ข้อมูลสถานะชุดสั่งตัด NUNUH Boutique ⚜️\nคุณ: ${order.customerName}\nรหัสออเดอร์: ${order.orderNumber}\nชุด: ${order.dressType}\nสถานะล่าสุด: ${STATUS_MAP[order.status]?.label || order.status}\nติดตามความคืบหน้าได้ที่: ${window.location.origin}/?tab=customer&search=${encodeURIComponent(order.customerPhone || order.orderNumber)}&mode=customer`
+                                )}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-[#05b34c] hover:text-[#04943f] font-bold flex items-center space-x-1 cursor-pointer bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 rounded-lg border border-emerald-200/60"
+                              >
+                                <Share2 className="h-3.5 w-3.5" />
+                                <span>แชร์สถานะเข้า LINE 📲</span>
+                              </a>
                               {lineOaId && (
                                 <>
                                   <a 

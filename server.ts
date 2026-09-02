@@ -105,12 +105,76 @@ const STATUS_MAP_TH: Record<string, { label: string; desc: string }> = {
   CANCELLED: { label: "ยกเลิกออเดอร์", desc: "รายการออเดอร์นี้ถูกยกเลิก" }
 };
 
-// Helper to read orders from PostgreSQL with fallback to file
+// In-memory caches for fast access and resilience against disk write glitches
+let cachedOrders: any[] | null = null;
+let cachedDeletedOrders: string[] | null = null;
+let cachedCatalogue: any[] | null = null;
+let cachedSettings: any | null = null;
+let cachedReviews: any[] | null = null;
+
+// Safe Atomic JSON File Write: Writes to a unique temp file first, then renames atomically
+function safeAtomicWriteJson(filePath: string, data: any): boolean {
+  const tempPath = `${filePath}.${process.pid}.${Date.now()}.${Math.random().toString(36).substring(2, 7)}.tmp`;
+  const backupPath = `${filePath}.bak`;
+  try {
+    const jsonString = JSON.stringify(data, null, 2);
+    fs.writeFileSync(tempPath, jsonString, 'utf8');
+    fs.renameSync(tempPath, filePath);
+    try {
+      fs.copyFileSync(filePath, backupPath);
+    } catch (_) {}
+    return true;
+  } catch (err) {
+    console.error(`❌ Error writing to file ${filePath}:`, err);
+    try {
+      if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+    } catch (_) {}
+    return false;
+  }
+}
+
+// Resilient JSON File Read with Backup and Soft Recovery
+function safeResilientReadJson<T>(filePath: string, fallback: T): T {
+  const backupPath = `${filePath}.bak`;
+  
+  // 1. Try reading primary file
+  if (fs.existsSync(filePath)) {
+    try {
+      const raw = fs.readFileSync(filePath, 'utf8');
+      if (raw && raw.trim()) {
+        return JSON.parse(raw);
+      }
+    } catch (err) {
+      console.warn(`⚠️ Warning: primary JSON file ${filePath} parse failed, trying backup:`, (err as any)?.message || err);
+    }
+  }
+
+  // 2. Try reading backup file
+  if (fs.existsSync(backupPath)) {
+    try {
+      const rawBak = fs.readFileSync(backupPath, 'utf8');
+      if (rawBak && rawBak.trim()) {
+        const parsed = JSON.parse(rawBak);
+        console.log(`✅ Successfully recovered ${filePath} from backup file.`);
+        // Restore primary from valid backup
+        safeAtomicWriteJson(filePath, parsed);
+        return parsed;
+      }
+    } catch (bakErr) {
+      console.error(`❌ Backup file ${backupPath} also unreadable:`, bakErr);
+    }
+  }
+
+  return fallback;
+}
+
+// Helper to read orders from PostgreSQL with fallback to file and cache
 async function readOrdersOnServer(): Promise<any[]> {
   if (isPostgresActive()) {
     try {
       const dbOrders = await getOrdersFromDb();
       if (dbOrders && dbOrders.length > 0) {
+        cachedOrders = dbOrders;
         return dbOrders;
       }
     } catch (e) {
@@ -118,20 +182,24 @@ async function readOrdersOnServer(): Promise<any[]> {
     }
   }
 
-  // Fallback to local file
+  // Fallback to local file with resilience
   try {
-    if (fs.existsSync(ORDERS_FILE)) {
-      const data = fs.readFileSync(ORDERS_FILE, 'utf8');
-      return JSON.parse(data);
+    const fileOrders = safeResilientReadJson<any[]>(ORDERS_FILE, cachedOrders || []);
+    if (fileOrders && Array.isArray(fileOrders) && fileOrders.length > 0) {
+      cachedOrders = fileOrders;
+      return fileOrders;
     }
   } catch (err) {
     console.error("Error reading orders from file:", err);
   }
-  return [];
+
+  return cachedOrders || [];
 }
 
 // Helper to write orders to PostgreSQL and file safely
 async function writeOrdersOnServer(orders: any[]) {
+  cachedOrders = orders;
+
   if (isPostgresActive()) {
     try {
       await saveMultipleOrdersToDb(orders);
@@ -140,11 +208,7 @@ async function writeOrdersOnServer(orders: any[]) {
     }
   }
 
-  try {
-    fs.writeFileSync(ORDERS_FILE, JSON.stringify(orders, null, 2), 'utf8');
-  } catch (err) {
-    console.error("Error writing orders to file:", err);
-  }
+  safeAtomicWriteJson(ORDERS_FILE, orders);
 }
 
 // Helper to read deleted order IDs
@@ -153,6 +217,7 @@ async function readDeletedOrdersOnServer(): Promise<string[]> {
     try {
       const dbDeleted = await getDeletedOrderIdsFromDb();
       if (dbDeleted && dbDeleted.length > 0) {
+        cachedDeletedOrders = dbDeleted;
         return dbDeleted;
       }
     } catch (e) {
@@ -161,18 +226,22 @@ async function readDeletedOrdersOnServer(): Promise<string[]> {
   }
 
   try {
-    if (fs.existsSync(DELETED_ORDERS_FILE)) {
-      const data = fs.readFileSync(DELETED_ORDERS_FILE, 'utf8');
-      return JSON.parse(data);
+    const fileDeleted = safeResilientReadJson<string[]>(DELETED_ORDERS_FILE, cachedDeletedOrders || []);
+    if (fileDeleted && Array.isArray(fileDeleted)) {
+      cachedDeletedOrders = fileDeleted;
+      return fileDeleted;
     }
   } catch (err) {
     console.error("Error reading deleted orders from file:", err);
   }
-  return [];
+
+  return cachedDeletedOrders || [];
 }
 
 // Helper to write deleted order IDs
 async function writeDeletedOrdersOnServer(ids: string[], newDeletedId?: string) {
+  cachedDeletedOrders = ids;
+
   if (isPostgresActive() && newDeletedId) {
     try {
       await deleteOrderInDb(newDeletedId);
@@ -181,11 +250,7 @@ async function writeDeletedOrdersOnServer(ids: string[], newDeletedId?: string) 
     }
   }
 
-  try {
-    fs.writeFileSync(DELETED_ORDERS_FILE, JSON.stringify(ids, null, 2), 'utf8');
-  } catch (err) {
-    console.error("Error writing deleted orders to file:", err);
-  }
+  safeAtomicWriteJson(DELETED_ORDERS_FILE, ids);
 }
 
 // Helpers for catalogue, settings, and reviews
@@ -194,6 +259,7 @@ async function readCatalogueOnServer(): Promise<any[]> {
     try {
       const dbCat = await getCatalogueFromDb();
       if (dbCat && dbCat.length > 0) {
+        cachedCatalogue = dbCat;
         return dbCat;
       }
     } catch (e) {
@@ -202,17 +268,21 @@ async function readCatalogueOnServer(): Promise<any[]> {
   }
 
   try {
-    if (fs.existsSync(CATALOGUE_FILE)) {
-      const data = fs.readFileSync(CATALOGUE_FILE, 'utf8');
-      return JSON.parse(data);
+    const fileCat = safeResilientReadJson<any[]>(CATALOGUE_FILE, cachedCatalogue || []);
+    if (fileCat && Array.isArray(fileCat)) {
+      cachedCatalogue = fileCat;
+      return fileCat;
     }
   } catch (err) {
     console.error("Error reading catalogue from file:", err);
   }
-  return [];
+
+  return cachedCatalogue || [];
 }
 
 async function writeCatalogueOnServer(data: any[]) {
+  cachedCatalogue = data;
+
   if (isPostgresActive()) {
     try {
       await saveCatalogueToDb(data);
@@ -221,11 +291,7 @@ async function writeCatalogueOnServer(data: any[]) {
     }
   }
 
-  try {
-    fs.writeFileSync(CATALOGUE_FILE, JSON.stringify(data, null, 2), 'utf8');
-  } catch (err) {
-    console.error("Error writing catalogue to file:", err);
-  }
+  safeAtomicWriteJson(CATALOGUE_FILE, data);
 }
 
 async function readSettingsOnServer(): Promise<any> {
@@ -233,6 +299,7 @@ async function readSettingsOnServer(): Promise<any> {
     try {
       const dbSettings = await getSettingsFromDb();
       if (dbSettings && Object.keys(dbSettings).length > 0) {
+        cachedSettings = dbSettings;
         return dbSettings;
       }
     } catch (e) {
@@ -241,17 +308,21 @@ async function readSettingsOnServer(): Promise<any> {
   }
 
   try {
-    if (fs.existsSync(SETTINGS_FILE)) {
-      const data = fs.readFileSync(SETTINGS_FILE, 'utf8');
-      return JSON.parse(data);
+    const fileSettings = safeResilientReadJson<any>(SETTINGS_FILE, cachedSettings || {});
+    if (fileSettings && typeof fileSettings === 'object') {
+      cachedSettings = fileSettings;
+      return fileSettings;
     }
   } catch (err) {
     console.error("Error reading settings from file:", err);
   }
-  return {};
+
+  return cachedSettings || {};
 }
 
 async function writeSettingsOnServer(data: any) {
+  cachedSettings = data;
+
   if (isPostgresActive()) {
     try {
       await saveSettingsToDb(data);
@@ -260,11 +331,7 @@ async function writeSettingsOnServer(data: any) {
     }
   }
 
-  try {
-    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(data, null, 2), 'utf8');
-  } catch (err) {
-    console.error("Error writing settings to file:", err);
-  }
+  safeAtomicWriteJson(SETTINGS_FILE, data);
 }
 
 async function readReviewsOnServer(): Promise<any[]> {
@@ -272,6 +339,7 @@ async function readReviewsOnServer(): Promise<any[]> {
     try {
       const dbReviews = await getReviewsFromDb();
       if (dbReviews && dbReviews.length > 0) {
+        cachedReviews = dbReviews;
         return dbReviews;
       }
     } catch (e) {
@@ -280,17 +348,21 @@ async function readReviewsOnServer(): Promise<any[]> {
   }
 
   try {
-    if (fs.existsSync(REVIEWS_FILE)) {
-      const data = fs.readFileSync(REVIEWS_FILE, 'utf8');
-      return JSON.parse(data);
+    const fileReviews = safeResilientReadJson<any[]>(REVIEWS_FILE, cachedReviews || []);
+    if (fileReviews && Array.isArray(fileReviews)) {
+      cachedReviews = fileReviews;
+      return fileReviews;
     }
   } catch (err) {
     console.error("Error reading reviews from file:", err);
   }
-  return [];
+
+  return cachedReviews || [];
 }
 
 async function writeReviewsOnServer(data: any[]) {
+  cachedReviews = data;
+
   if (isPostgresActive()) {
     try {
       await saveReviewsToDb(data);
@@ -299,11 +371,7 @@ async function writeReviewsOnServer(data: any[]) {
     }
   }
 
-  try {
-    fs.writeFileSync(REVIEWS_FILE, JSON.stringify(data, null, 2), 'utf8');
-  } catch (err) {
-    console.error("Error writing reviews to file:", err);
-  }
+  safeAtomicWriteJson(REVIEWS_FILE, data);
 }
 
 // Server-Sent Events (SSE) for Real-Time Multi-User Sync
@@ -588,19 +656,47 @@ app.post("/api/reviews", async (req, res) => {
 
 // API Endpoint to send status push message directly to a user
 app.post("/api/send-status", async (req: any, res) => {
-  const { userId, message } = req.body;
+  let { userId, orderId, orderNumber, customerPhone, message } = req.body || {};
   const LINE_CHANNEL_ACCESS_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN || "";
 
-  if (!userId) {
-    return res.status(400).json({ error: "userId is required" });
+  // If userId is not provided, look up from orders
+  if (!userId && (orderId || orderNumber || customerPhone)) {
+    try {
+      const orders = await readOrdersOnServer();
+      const matched = orders.find((o: any) => 
+        (orderId && o.id === orderId) ||
+        (orderNumber && o.orderNumber?.toLowerCase() === orderNumber?.toLowerCase()) ||
+        (customerPhone && o.customerPhone?.replace(/\D/g, '') === customerPhone?.replace(/\D/g, ''))
+      );
+      if (matched && matched.lineUserId) {
+        userId = matched.lineUserId;
+      }
+    } catch (e) {
+      console.warn("Failed to lookup order for lineUserId:", e);
+    }
   }
+
   if (!message) {
     return res.status(400).json({ error: "message is required" });
   }
 
+  if (!userId) {
+    return res.json({ 
+      success: true, 
+      simulated: true, 
+      hasUserId: false,
+      message: "ไม่พบ LINE User ID ของลูกค้ารายนี้ (ระบบได้คัดลอกข้อความเพื่อเปิดส่งในแผงแชทให้ค่ะ)" 
+    });
+  }
+
   if (!LINE_CHANNEL_ACCESS_TOKEN) {
-    console.warn("⚠️ LINE_CHANNEL_ACCESS_TOKEN not set, simulating push message sending.");
-    return res.json({ success: true, simulated: true, message: "LINE_CHANNEL_ACCESS_TOKEN not set. Simulating success." });
+    console.warn("⚠️ LINE_CHANNEL_ACCESS_TOKEN not set, simulating push message sending to userId:", userId);
+    return res.json({ 
+      success: true, 
+      simulated: true, 
+      hasUserId: true,
+      message: "LINE_CHANNEL_ACCESS_TOKEN not set. Simulating success." 
+    });
   }
 
   try {
@@ -623,11 +719,11 @@ app.post("/api/send-status", async (req: any, res) => {
 
     if (response.ok) {
       console.log(`✅ Push message sent successfully to User ID: ${userId}`);
-      return res.json({ success: true });
+      return res.json({ success: true, hasUserId: true });
     } else {
       const errText = await response.text();
       console.error(`❌ Failed to send push message to LINE: ${errText}`);
-      return res.status(response.status).json({ error: errText });
+      return res.status(response.status).json({ error: errText, hasUserId: true });
     }
   } catch (err: any) {
     console.error("❌ Error sending push message:", err);

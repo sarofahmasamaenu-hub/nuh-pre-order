@@ -38,7 +38,9 @@ import {
   Lock,
   Bell,
   AlertTriangle,
-  Star
+  Star,
+  Copy,
+  Share2
 } from 'lucide-react';
 import PrintOrderModal from './PrintOrderModal';
 import EditOrderModal from './EditOrderModal';
@@ -83,22 +85,60 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
   const [statusModalTarget, setStatusModalTarget] = useState<OrderStatus>(OrderStatus.RECEIVED);
   const [statusModalDate, setStatusModalDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
   const [statusModalNote, setStatusModalNote] = useState<string>('');
+  const [statusModalSendLine, setStatusModalSendLine] = useState<boolean>(true);
+
+  // LINE Notification Feedback Modal
+  const [lineStatusModal, setLineStatusModal] = useState<{
+    isOpen: boolean;
+    order: Order;
+    message: string;
+    targetUserId: string;
+    isSimulated: boolean;
+    directUrl: string;
+    feedbackText: string;
+    isSuccess: boolean;
+  } | null>(null);
 
   const handleOpenStatusModal = (order: Order, targetStatus?: OrderStatus) => {
     setStatusModalOrder(order);
     setStatusModalTarget(targetStatus || order.status || OrderStatus.RECEIVED);
     setStatusModalDate(order.statusDate || new Date().toISOString().split('T')[0]);
     setStatusModalNote('');
+    setStatusModalSendLine(true);
   };
 
   const handleSaveStatusModal = () => {
     if (!statusModalOrder) return;
+    const targetStatus = statusModalTarget;
+    const targetDate = statusModalDate;
+    const targetNote = statusModalNote.trim() || undefined;
+
+    const updatedOrder: Order = {
+      ...statusModalOrder,
+      status: targetStatus,
+      statusDate: targetDate,
+      statusHistory: [
+        ...(statusModalOrder.statusHistory || []),
+        {
+          status: targetStatus,
+          date: targetDate,
+          note: targetNote,
+          updatedAt: new Date().toISOString()
+        }
+      ]
+    };
+
     onUpdateOrderStatus(
       statusModalOrder.id,
-      statusModalTarget,
-      statusModalDate,
-      statusModalNote.trim() || undefined
+      targetStatus,
+      targetDate,
+      targetNote
     );
+
+    if (statusModalSendLine) {
+      handleSendStatusDirectly(updatedOrder, targetNote);
+    }
+
     setStatusModalOrder(null);
   };
 
@@ -498,92 +538,107 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
     }
   };
 
-  const handleSendStatusDirectly = async (order: Order) => {
-    const currentStatusCfg = STATUS_MAP[order.status];
-    const discountVal = order.discount || 0;
-    const formattedDelivery = new Date(order.deliveryDate).toLocaleDateString('th-TH', {
+  const handleSendStatusDirectly = async (order: Order, customNote?: string) => {
+    const currentStatusCfg = STATUS_MAP[order.status] || { label: order.status, description: '' };
+    const formattedDelivery = order.deliveryDate ? new Date(order.deliveryDate).toLocaleDateString('th-TH', {
       day: 'numeric',
       month: 'long',
       year: 'numeric'
-    });
-    const portalUrl = `${publicUrl}?tab=customer&search=${encodeURIComponent(order.customerPhone)}&mode=customer`;
-    const message = `⚜️ อัปเดตสถานะชุดสั่งตัด NUNUH Boutique ⚜️\n\nเรียนคุณ: ${order.customerName}\nรหัสออเดอร์: ${order.orderNumber}\nประเภทชุด: ${order.dressType}\n\n📍 สถานะปัจจุบัน: [${currentStatusCfg.label}]\n➡️ "${currentStatusCfg.description}"\n\n📅 กำหนดส่งมอบ: ${formattedDelivery}\n\nท่านสามารถตรวจสอบข้อมูลสัดส่วนและติดตามความคืบหน้าแบบละเอียดด้วยตนเองได้ที่นี่:\n🔗 ${portalUrl}\n\nขอขอบพระคุณที่เลือกใช้บริการค่ะ ✨`;
+    }) : 'ตามตารางนัดหมาย';
+    const cleanPhone = (order.customerPhone || '').replace(/\D/g, '');
+    const portalUrl = `${publicUrl}?tab=customer&search=${encodeURIComponent(cleanPhone || order.orderNumber)}&mode=customer`;
 
-    // คัดลอกลงคลิปบอร์ดก่อนเสมอ เพื่อกันข้อผิดพลาดและอำนวยความสะดวก
+    let message = `⚜️ แจ้งเตือนอัปเดตสถานะชุดสั่งตัด NUNUH Boutique ⚜️\n\n`;
+    message += `เรียนคุณ: ${order.customerName}${order.customerNickname ? ` (${order.customerNickname})` : ''}\n`;
+    message += `รหัสออเดอร์: ${order.orderNumber}\n`;
+    message += `ประเภทชุด: ${order.dressType || 'ชุดสั่งตัด'}\n`;
+    if (order.fabricType) message += `เนื้อผ้า: ${order.fabricType} ${order.fabricColor || ''}\n`;
+    message += `\n📍 สถานะล่าสุด: [${currentStatusCfg.label}]\n`;
+    if (currentStatusCfg.description) message += `➡️ "${currentStatusCfg.description}"\n`;
+    if (customNote) message += `📌 บันทึกเพิ่มเติม: ${customNote}\n`;
+    message += `\n📅 กำหนดส่งมอบ: ${formattedDelivery}\n`;
+    message += `\nท่านสามารถตรวจสอบข้อมูลสัดส่วน แบบชุด และติดตามสถานะแบบละเอียดได้ที่นี่:\n🔗 ${portalUrl}\n\nขอขอบพระคุณที่ไว้วางใจ NUNUH Boutique ค่ะ ✨`;
+
+    // คัดลอกลงคลิปบอร์ดก่อนเสมอ เพื่อความสะดวกรวดเร็ว
     try {
-      navigator.clipboard.writeText(message);
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(message);
+      }
     } catch (err) {
-      console.error('Failed to copy text: ', err);
+      console.warn('Clipboard write failed:', err);
     }
 
     const { hasLineUserId, lineUserId } = getLineDetails(order);
     const targetUserId = lineUserId || order.lineUserId?.trim() || '';
+    const directOaUrl = targetUserId ? getDirectOaUrl(order, targetUserId) : (lineOaChatUrl || `https://manager.line.biz/account/${lineOaId.startsWith('@') ? lineOaId : `@${lineOaId}`}/chat/`);
 
     if (hasLineUserId || targetUserId) {
-      // 1. กรณีเป็น LINE User ID จริง: พยายามส่งอัตโนมัติผ่าน API บอทก่อน
+      // 1. กรณีเป็น LINE User ID จริง: ยิง API
       try {
         const response = await fetch('/api/send-status', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             userId: targetUserId,
+            orderId: order.id,
+            orderNumber: order.orderNumber,
+            customerPhone: order.customerPhone,
             message
           })
         });
 
-        const directOaUrl = getDirectOaUrl(order, targetUserId);
+        const resData = await response.json().catch(() => ({}));
 
-        if (response.ok) {
-          const resData = await response.json();
-          if (resData.simulated) {
-            alert(
-              `📲 [โหมดจำลอง] คัดลอกข้อความสถานะแล้ว!\n` +
-              `เนื่องจากยังไม่ได้เปิดระบบเชื่อมต่อบอท API สมบูรณ์ ระบบได้คัดลอกข้อความแจ้งสถานะเรียบร้อยแล้วค่ะ\n` +
-              `เมื่อกดตกลง ระบบจะเปิดหน้าห้องแชทของลูกค้ารายนี้ในระบบ LINE OA Manager ให้คุณกดวาง (Paste) ส่งข้อความได้ทันทีเลยค่ะ 💬`
-            );
-            window.open(directOaUrl, '_blank');
-          } else {
-            alert(`✅ ส่งข้อความแจ้งสถานะอัตโนมัติไปยัง LINE ของคุณ ${order.customerName} เรียบร้อยแล้วค่ะ!`);
-          }
+        if (response.ok && resData.success && !resData.simulated) {
+          setLineStatusModal({
+            isOpen: true,
+            order,
+            message,
+            targetUserId,
+            isSimulated: false,
+            directUrl: directOaUrl,
+            feedbackText: `✅ ส่งข้อความแจ้งเตือนสถานะอัตโนมัติเข้า LINE ของคุณ ${order.customerName} เรียบร้อยแล้วค่ะ! ✨`,
+            isSuccess: true
+          });
         } else {
-          // หาก API เกิดความผิดพลาด ให้คัดลอกและเปิดหน้าแชทของลูกค้ารายนั้นโดยตรงเพื่อให้แอดมินกดวางส่งเอง
-          const errData = await response.json().catch(() => ({}));
-          const errMsg = errData.error || "ไม่ได้เปิดระบบเชื่อมต่อบอท API";
-          const userFriendlyError = parseLineError(errMsg);
-          alert(
-            `📋 ระบบได้คัดลอกข้อความสถานะลงคลิปบอร์ดให้แล้วค่ะ!\n\n` +
-            `⚠️ ระบบการส่งแชทอัตโนมัติแจ้งว่า:\n` +
-            `${userFriendlyError}\n\n` +
-            `ระบบจะนำท่านไปยังห้องแชทของ คุณ ${order.customerName} บนระบบ LINE OA Manager ทันที เพื่อให้คุณกดวาง (Paste/Ctrl+V) และส่งข้อความคุยต่อได้โดยไม่ต้องเสียเวลาคีย์ใหม่ค่ะ 💬`
-          );
-          window.open(directOaUrl, '_blank');
+          setLineStatusModal({
+            isOpen: true,
+            order,
+            message,
+            targetUserId,
+            isSimulated: true,
+            directUrl: directOaUrl,
+            feedbackText: `📋 คัดลอกข้อความแจ้งสถานะแล้ว! (โหมดแชท LINE OA Manager) คุณสามารถเปิดห้องแชทแล้วกดวาง (Paste / Ctrl+V) เพื่อส่งให้ลูกค้าได้ทันทีค่ะ 💬`,
+            isSuccess: true
+          });
         }
       } catch (err: any) {
-        // หากมี error ใดๆ เช่น เชื่อมต่อไม่ได้ ให้พาไปหน้าแชทตรงพร้อมสถานะที่ก๊อปปี้แล้ว
-        const directOaUrl = getDirectOaUrl(order, targetUserId);
-        alert(
-          `📋 คัดลอกข้อความสถานะแล้ว!\n` +
-          `(ระบบการแจ้งเตือนอัตโนมัติติดขัดชั่วคราว: ${err.message || err})\n` +
-          `กดตกลงเพื่อเปิดหน้าห้องแชทลูกค้าใน LINE OA Manager แล้วกดวางข้อความส่งคุยต่อได้ทันทีเลยค่ะ 💬`
-        );
-        window.open(directOaUrl, '_blank');
+        setLineStatusModal({
+          isOpen: true,
+          order,
+          message,
+          targetUserId,
+          isSimulated: true,
+          directUrl: directOaUrl,
+          feedbackText: `📋 คัดลอกข้อความแจ้งเตือนสถานะแล้ว! สามารถเปิดห้องแชทของลูกค้าเพื่อกดวาง (Paste) ส่งได้เลยค่ะ`,
+          isSuccess: true
+        });
       }
     } else {
-      // 2. กรณีไม่มี LINE User ID: คัดลอกข้อความและเปิดหน้าแชทหลัก LINE OA เพื่อให้แอดมินใช้ช่องค้นหาชื่อหาแชทและกดวางส่ง
+      // 2. กรณีไม่มี LINE User ID: คัดลอกและเปิดโมดอลแนะนำ
       const cleanId = lineOaId.startsWith('@') ? lineOaId : `@${lineOaId}`;
       const generalOaUrl = lineOaChatUrl || `https://manager.line.biz/account/${cleanId}/chat/`;
 
-      alert(
-        `📋 คัดลอกข้อความสถานะอัปเดตของ คุณ ${order.customerName} เรียบร้อยแล้วค่ะ!\n\n` +
-        `เนื่องจากออเดอร์นี้ยังไม่ได้เชื่อมต่อข้อมูล LINE User ID ในฐานข้อมูล (รหัสขึ้นต้นด้วย U...)\n` +
-        `ระบบจึงคัดลอกข้อความสถานะเก็บลงคลิปบอร์ดไว้ให้แล้ว และนำท่านไปยังหน้าแชทหลักของ LINE OA เพื่อความสะดวกในการทำงานค่ะ\n\n` +
-        `💡 แนะนำวิธีเปิดลิงก์ห้องแชทของลูกค้าโดยตรงทันทีในครั้งหน้า:\n` +
-        `1. ค้นหาชื่อ คุณ "${order.customerName}" ในแผงแชทของทางร้านเพื่อเปิดห้องแชทบนเบราว์เซอร์\n` +
-        `2. สังเกตแถบลิงก์ (URL Address) ด้านบน จะมีรหัสผู้ใช้ขึ้นต้นด้วย U ปรากฏอยู่ เช่น Uxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n` +
-        `3. นำรหัสดังกล่าวมาป้อนใส่ในช่อง "LINE User ID" ในหน้าแก้ไขออเดอร์นี้ค่ะ และกดบันทึกเพื่อใช้ลิงก์ตรงและระบบแจ้งเตือนแชทได้ทันทีค่ะ!\n\n` +
-        `กรุณากดตกลงเพื่อเปิดแผงแชท และวาง (Paste) ส่งข้อความแจ้งสถานะได้ทันทีค่ะ 💬`
-      );
-      window.open(generalOaUrl, '_blank');
+      setLineStatusModal({
+        isOpen: true,
+        order,
+        message,
+        targetUserId: '',
+        isSimulated: true,
+        directUrl: generalOaUrl,
+        feedbackText: `📋 คัดลอกข้อความแจ้งสถานะอัปเดตของ คุณ ${order.customerName} เรียบร้อยแล้วค่ะ! พร้อมเปิดแชท LINE OA เพื่อให้คุณกดวางและส่งหาลูกค้าได้ทันที 💬`,
+        isSuccess: true
+      });
     }
   };
 
@@ -2933,6 +2988,25 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
                   className="w-full text-xs p-3 rounded-xl border border-natural-wheat focus:ring-2 focus:ring-natural-clay/20 focus:border-natural-clay"
                 />
               </div>
+
+              {/* LINE Notification Auto Send Toggle */}
+              <label className="flex items-start gap-2.5 p-3 rounded-xl bg-emerald-50/80 border border-emerald-200/80 cursor-pointer hover:bg-emerald-50 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={statusModalSendLine}
+                  onChange={(e) => setStatusModalSendLine(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                />
+                <div className="text-xs">
+                  <span className="font-bold text-emerald-950 flex items-center gap-1.5">
+                    <span>📲 ส่งแจ้งเตือนสถานะใหม่นี้เข้า LINE ลูกค้าทันที</span>
+                    <span className="bg-[#06C755] text-white text-[9px] font-black px-1.5 py-0.5 rounded">LINE OA</span>
+                  </span>
+                  <p className="text-emerald-700/80 text-[11px] mt-0.5">
+                    ระบบจะจัดส่งข้อความแจ้งเตือนภาษาไทยพร้อมลิงก์ติดตามงานเข้า LINE ให้ทันทีค่ะ
+                  </p>
+                </div>
+              </label>
             </div>
 
             <div className="flex justify-end space-x-2.5 pt-2 border-t border-natural-sand">
@@ -2968,6 +3042,97 @@ export default function OrderTracker({ orders, catalogue = [], onUpdateOrderStat
             setSignatureModalOrder(null);
           }}
         />
+      )}
+
+      {/* LINE Notification Feedback Modal */}
+      {lineStatusModal && lineStatusModal.isOpen && (
+        <div className="fixed inset-0 bg-natural-espresso/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-natural-wheat relative space-y-4 animate-scale-up">
+            <button
+              type="button"
+              onClick={() => setLineStatusModal(null)}
+              className="absolute top-4 right-4 text-natural-espresso/40 hover:text-natural-espresso p-1.5 rounded-lg hover:bg-natural-sand transition-colors cursor-pointer"
+            >
+              ✕
+            </button>
+
+            <div className="flex items-center space-x-3 border-b border-natural-sand/70 pb-3">
+              <div className="w-11 h-11 rounded-2xl bg-emerald-50 text-[#06C755] border border-emerald-100 flex items-center justify-center font-bold text-xl shadow-3xs">
+                📲
+              </div>
+              <div>
+                <h3 className="font-serif font-bold text-base sm:text-lg text-natural-espresso flex items-center gap-1.5">
+                  <span>แจ้งเตือนสถานะลูกค้าทาง LINE</span>
+                  <span className="bg-[#06C755] text-white text-[10px] font-black px-1.5 py-0.5 rounded">LINE OA</span>
+                </h3>
+                <p className="text-xs text-natural-espresso/60 font-mono">
+                  ออเดอร์ #{lineStatusModal.order.orderNumber} • คุณ {lineStatusModal.order.customerName}
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3 bg-emerald-50/60 rounded-2xl border border-emerald-100/80 text-xs text-emerald-950 space-y-1">
+              <p className="font-bold flex items-center gap-1">
+                <span>{lineStatusModal.feedbackText}</span>
+              </p>
+            </div>
+
+            {/* Message Preview */}
+            <div className="space-y-1.5">
+              <div className="flex justify-between items-center text-xs font-semibold text-natural-espresso/70">
+                <span>ข้อความที่ถูกจัดเตรียมและคัดลอก:</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(lineStatusModal.message);
+                    alert('📋 คัดลอกข้อความลงคลิปบอร์ดแล้วค่ะ');
+                  }}
+                  className="text-natural-clay hover:underline font-bold flex items-center gap-1 cursor-pointer"
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                  <span>คัดลอกซ้ำ</span>
+                </button>
+              </div>
+              <textarea
+                readOnly
+                rows={7}
+                value={lineStatusModal.message}
+                className="w-full text-[11px] p-3 rounded-xl border border-natural-wheat bg-natural-cream/10 font-sans text-natural-espresso/90 focus:outline-none select-all"
+              />
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex flex-col sm:flex-row gap-2 pt-2 border-t border-natural-sand">
+              <a
+                href={lineStatusModal.directUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex-1 px-4 py-2.5 bg-[#06C755] hover:bg-[#05b34c] text-white font-bold text-xs rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center space-x-1.5"
+              >
+                <MessageSquare className="h-4 w-4" />
+                <span>เปิดห้องแชท LINE 💬</span>
+              </a>
+
+              <a
+                href={`https://line.me/R/msg/text/?${encodeURIComponent(lineStatusModal.message)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-4 py-2.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center space-x-1"
+              >
+                <Share2 className="h-4 w-4" />
+                <span>แชร์เข้า LINE</span>
+              </a>
+
+              <button
+                type="button"
+                onClick={() => setLineStatusModal(null)}
+                className="px-4 py-2.5 bg-natural-sand hover:bg-natural-wheat text-natural-espresso font-bold text-xs rounded-xl transition-colors cursor-pointer"
+              >
+                ปิด
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
 
