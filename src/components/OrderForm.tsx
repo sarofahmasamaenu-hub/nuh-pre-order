@@ -43,6 +43,19 @@ export default function OrderForm({
   const [externalOrderId, setExternalOrderId] = useState('');
   const [branch, setBranch] = useState(staffBranch || 'สาขานราธิวาส');
   const [tailorName, setTailorName] = useState('');
+
+  // Sync staff info when staff logs in or switches
+  useEffect(() => {
+    if (staffName) {
+      setSelectedStaffName(staffName);
+    }
+  }, [staffName]);
+
+  useEffect(() => {
+    if (staffBranch) {
+      setBranch(staffBranch);
+    }
+  }, [staffBranch]);
   
   const [dressType, setDressType] = useState('เดรสราตรี');
   const [customDressType, setCustomDressType] = useState('');

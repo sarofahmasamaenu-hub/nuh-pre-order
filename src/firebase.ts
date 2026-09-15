@@ -80,6 +80,30 @@ export function registerDeletedIdInMemory(id: string) {
 }
 
 /**
+ * Remove all undefined values recursively so Firestore setDoc does not throw
+ * "Function setDoc() called with invalid data. Unsupported field value: undefined"
+ */
+export function sanitizeForFirestore(obj: any): any {
+  if (obj === null || obj === undefined) return null;
+  if (Array.isArray(obj)) {
+    return obj
+      .filter(item => item !== undefined)
+      .map(item => sanitizeForFirestore(item));
+  }
+  if (typeof obj === 'object') {
+    const res: Record<string, any> = {};
+    for (const key of Object.keys(obj)) {
+      const val = obj[key];
+      if (val !== undefined) {
+        res[key] = sanitizeForFirestore(val);
+      }
+    }
+    return res;
+  }
+  return obj;
+}
+
+/**
  * Save / Update a single order in Firestore
  */
 export async function saveOrderToFirestore(order: Order): Promise<void> {
@@ -91,12 +115,14 @@ export async function saveOrderToFirestore(order: Order): Promise<void> {
   }
   try {
     const orderDocRef = doc(db, 'orders', order.id);
-    await setDoc(orderDocRef, {
+    const payload = sanitizeForFirestore({
       ...order,
       _syncedAt: new Date().toISOString()
-    }, { merge: true });
+    });
+    await setDoc(orderDocRef, payload, { merge: true });
+    console.log(`[Firestore] Successfully saved order ${order.id} (${order.orderNumber})`);
   } catch (e) {
-    console.warn('Error saving order to Firestore:', e);
+    console.error('Error saving order to Firestore:', e);
   }
 }
 
@@ -116,14 +142,16 @@ export async function saveOrdersBatchToFirestore(orders: Order[]): Promise<void>
 
     const promises = validOrders.map(order => {
       const orderDocRef = doc(db, 'orders', order.id);
-      return setDoc(orderDocRef, {
+      const payload = sanitizeForFirestore({
         ...order,
         _syncedAt: new Date().toISOString()
-      }, { merge: true });
+      });
+      return setDoc(orderDocRef, payload, { merge: true });
     });
     await Promise.all(promises);
+    console.log(`[Firestore] Successfully batch saved ${validOrders.length} orders`);
   } catch (e) {
-    console.warn('Error batch saving orders to Firestore:', e);
+    console.error('Error batch saving orders to Firestore:', e);
   }
 }
 
@@ -245,6 +273,7 @@ export function mapDocToOrder(docSnap: any): Order {
   }
 
   return {
+    ...data,
     id,
     orderNumber: data.orderNumber || ('NU-' + id.replace(/[^0-9]/g, '').slice(-5)),
     customerName: data.customerName || 'ลูกค้าห้องเสื้อ',
@@ -271,19 +300,8 @@ export function mapDocToOrder(docSnap: any): Order {
     customerPhotoBack: data.customerPhotoBack || '',
     customerPhotoExtra1: data.customerPhotoExtra1 || '',
     customerPhotoExtra2: data.customerPhotoExtra2 || '',
-    pickupSignature: data.pickupSignature || undefined,
-    pickupSignedAt: data.pickupSignedAt || undefined,
-    pickupSigneeName: data.pickupSigneeName || undefined,
-    paymentMethod: data.paymentMethod || undefined,
-    branch: data.branch || undefined,
-    staffName: data.staffName || undefined,
-    staffBranch: data.staffBranch || undefined,
-    tailorName: data.tailorName || undefined,
-    customerCategory: data.customerCategory || undefined,
-    membershipTier: data.membershipTier || undefined,
-    selectedDesignId: data.selectedDesignId || undefined,
     updatedAt: data.updatedAt || Date.now()
-  };
+  } as Order;
 }
 
 /**
@@ -506,10 +524,11 @@ export async function syncAllLocalOrdersToFirestore(orders: Order[]): Promise<{ 
           continue;
         }
         const orderDocRef = doc(db, 'orders', order.id);
-        await setDoc(orderDocRef, {
+        const payload = sanitizeForFirestore({
           ...order,
           _syncedAt: new Date().toISOString()
-        }, { merge: true });
+        });
+        await setDoc(orderDocRef, payload, { merge: true });
         synced++;
       }
     }

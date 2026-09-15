@@ -1440,12 +1440,20 @@ export default function App() {
       staffBranch: currentStaff?.branch || newOrder.staffBranch,
       updatedAt: Date.now() 
     };
+
+    // บันทึกตรงเข้า Firestore ทันทีเป็นอันดับแรกเพื่อให้ระบบหลักและทุกเครื่องเห็นทันที
+    saveOrderToFirestore(orderWithTime).catch((err) => {
+      console.warn("Direct Firestore save error:", err);
+    });
+
     const updated = [orderWithTime, ...orders];
     saveOrdersToStorage(updated);
     // หลังบันทึกย้ายแท็บไปหน้าติดตามงาน (หากเป็นพนักงานให้คงอยู่ที่เดิมเพื่อความปลอดภัย)
     if (isStaffMode) {
       setActiveTab('orderForm');
-      alert(`บันทึกออเดอร์ใหม่ของคุณ ${newOrder.customerName} เรียบร้อยแล้วค่ะ! ✨`);
+      try {
+        alert(`บันทึกออเดอร์ใหม่ของคุณ ${newOrder.customerName} เรียบร้อยแล้วค่ะ! ✨`);
+      } catch (e) {}
     } else {
       setActiveTab('tracker');
     }

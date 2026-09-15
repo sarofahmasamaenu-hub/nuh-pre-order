@@ -272,11 +272,31 @@ function getFirestoreDb() {
   return firestoreDb;
 }
 
+function sanitizeForFirestore(obj: any): any {
+  if (obj === null || obj === undefined) return null;
+  if (Array.isArray(obj)) {
+    return obj
+      .filter(item => item !== undefined)
+      .map(item => sanitizeForFirestore(item));
+  }
+  if (typeof obj === 'object') {
+    const res: Record<string, any> = {};
+    for (const key of Object.keys(obj)) {
+      const val = obj[key];
+      if (val !== undefined) {
+        res[key] = sanitizeForFirestore(val);
+      }
+    }
+    return res;
+  }
+  return obj;
+}
+
 function initFirestoreSentinel() {
   const db = getFirestoreDb();
   if (!db) return;
 
-  console.log("[Firestore Sentinel] Active and guarding against zombie orders...");
+  console.log("[Firestore Sentinel] Active and guarding against zombie orders & syncing staff orders...");
 
   // 1. Listen for changes in settings/deleted_orders from Firestore
   try {
@@ -298,22 +318,71 @@ function initFirestoreSentinel() {
   }
 
   // 2. Real-time sentinel on orders collection:
-  // If ANY client (running old bundle or cached localStorage) writes a deleted order,
-  // IMMEDIATELY delete it from Firestore!
+  // - Purge zombie orders immediately if written
+  // - Synchronize new staff orders from Firestore to server & SSE
   try {
-    onSnapshot(collection(db, "orders"), (snapshot) => {
-      snapshot.forEach(async (docSnap) => {
+    onSnapshot(collection(db, "orders"), async (snapshot) => {
+      const currentDeleted = cachedDeletedOrders || [];
+      const delSet = new Set(currentDeleted);
+      let hasZombie = false;
+      const validFromFirestore: any[] = [];
+
+      snapshot.forEach((docSnap) => {
         const orderId = docSnap.id;
-        if (cachedDeletedOrders && cachedDeletedOrders.includes(orderId)) {
+        if (delSet.has(orderId)) {
+          hasZombie = true;
           console.warn(`[Firestore Sentinel] Zombie order detected in Firestore: ${orderId}. Purging immediately.`);
-          try {
-            await deleteDoc(doc(db, "orders", orderId));
-            broadcastSSEEvent("order_deleted", { deletedId: orderId, deletedIds: cachedDeletedOrders });
-          } catch (e) {
-            console.error(`[Firestore Sentinel] Error deleting zombie doc ${orderId}:`, e);
+          deleteDoc(doc(db, "orders", orderId)).catch(() => {});
+        } else {
+          const docData = docSnap.data();
+          if (docData && (docData.id || orderId)) {
+            validFromFirestore.push({ ...docData, id: docData.id || orderId });
           }
         }
       });
+
+      if (hasZombie) {
+        broadcastSSEEvent("order_deleted", { deletedIds: currentDeleted });
+      }
+
+      // Synchronize valid orders into server memory and broadcast to main admin/clients
+      if (validFromFirestore.length > 0) {
+        try {
+          const current = await readOrdersOnServer();
+          const map = new Map<string, any>();
+          for (const o of current) {
+            if (!delSet.has(o.id)) map.set(o.id, o);
+          }
+
+          let anyChange = false;
+          for (const fo of validFromFirestore) {
+            if (!fo || !fo.id || delSet.has(fo.id)) continue;
+            if (!map.has(fo.id)) {
+              map.set(fo.id, fo);
+              anyChange = true;
+            } else {
+              const existing = map.get(fo.id)!;
+              const existingTime = existing.updatedAt || 0;
+              const incomingTime = fo.updatedAt || 0;
+              if (incomingTime > existingTime) {
+                map.set(fo.id, { ...existing, ...fo });
+                anyChange = true;
+              }
+            }
+          }
+
+          if (anyChange) {
+            const fullyMerged = Array.from(map.values()).sort((a, b) => {
+              return (b.orderNumber || "").localeCompare(a.orderNumber || "", undefined, { numeric: true });
+            });
+            await writeOrdersOnServer(fullyMerged);
+            broadcastSSEEvent("orders_updated", { orders: fullyMerged, deletedIds: currentDeleted });
+            console.log(`[Firestore Sentinel] Synced ${fullyMerged.length} orders from Firestore to server.`);
+          }
+        } catch (e) {
+          console.warn("[Firestore Sentinel] Error syncing orders to server:", e);
+        }
+      }
     }, (err) => {
       console.warn("[Firestore Sentinel] orders subscription error:", err);
     });
@@ -702,6 +771,22 @@ app.post("/api/orders", async (req: any, res) => {
     // Real-time broadcast to all connected users (Staff & Main Admin) with deletedIds to prevent resurrection
     broadcastSSEEvent("orders_updated", { orders: fullyMerged, deletedIds });
 
+    // Mirror to Firestore so all clients and devices stay 100% in sync
+    const db = getFirestoreDb();
+    if (db) {
+      for (const o of incomingOrders) {
+        if (o && o.id && !deletedSet.has(o.id)) {
+          const sanitized = sanitizeForFirestore({
+            ...o,
+            _syncedAt: new Date().toISOString()
+          });
+          setDoc(doc(db, "orders", o.id), sanitized, { merge: true }).catch((err) => {
+            console.warn(`[Server] Firestore write error for order ${o.id}:`, err);
+          });
+        }
+      }
+    }
+
     res.json(fullyMerged);
   } else if (Array.isArray(req.body)) {
     // Fallback for direct array posting
@@ -732,6 +817,22 @@ app.post("/api/orders", async (req: any, res) => {
 
     // Real-time broadcast
     broadcastSSEEvent("orders_updated", { orders: fullyMerged, deletedIds });
+
+    // Mirror to Firestore
+    const db = getFirestoreDb();
+    if (db) {
+      for (const o of req.body) {
+        if (o && o.id && !deletedSet.has(o.id)) {
+          const sanitized = sanitizeForFirestore({
+            ...o,
+            _syncedAt: new Date().toISOString()
+          });
+          setDoc(doc(db, "orders", o.id), sanitized, { merge: true }).catch((err) => {
+            console.warn(`[Server] Firestore write error for order ${o.id}:`, err);
+          });
+        }
+      }
+    }
 
     res.json(fullyMerged);
   } else {
