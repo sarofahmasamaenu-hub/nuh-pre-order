@@ -3089,6 +3089,26 @@ export default function App() {
                         )}
                       </div>
 
+                      {/* Troubleshooting Banner for the exact LINE default error */}
+                      <div className="bg-amber-50/80 p-3 rounded-2xl border border-amber-200 text-[11px] text-amber-950 space-y-2">
+                        <p className="font-bold flex items-center gap-1.5 text-amber-900">
+                          <span>⚠️</span>
+                          <span>วิธีแก้กรณี LINE ตอบว่า "ต้องขออภัยเป็นอย่างยิ่งที่บัญชีนี้ไม่สามารถตอบข้อความใดๆ ได้...":</span>
+                        </p>
+                        <p className="leading-relaxed opacity-90">
+                          ข้อความนี้เป็นข้อความอัตโนมัติของ LINE ที่มาตัดหน้าระบบ สามารถปิดได้ง่ายๆ ใน 1 นาทีค่ะ:
+                        </p>
+                        <ol className="list-decimal list-inside space-y-1.5 font-medium pl-1 text-[10.5px]">
+                          <li>เข้าสู่ระบบลิงก์ตรง 👉 <a href="https://manager.line.biz/account/@237aynfq/setting/response" target="_blank" rel="noopener noreferrer" className="text-amber-800 underline font-bold">manager.line.biz/setting/response</a> (หรือเข้า <a href="https://manager.line.biz/" target="_blank" rel="noopener noreferrer" className="text-amber-800 underline font-bold">manager.line.biz</a> แล้วเลือกบัญชีร้าน <strong>NUNUH PRE-ORDER</strong>)</li>
+                          <li>คลิกรูปฟันเฟือง <strong>"ตั้งค่า" (Settings)</strong> ที่มุมขวาบนของหน้าเว็บหลัก &gt; เลือกเมนู <strong>"ตั้งค่าการตอบกลับ" (Response settings)</strong> ทางซ้าย</li>
+                          <li>ที่หัวข้อ <strong>"ข้อความตอบกลับอัตโนมัติ" (Auto-response messages)</strong> ให้กดเปลี่ยนเป็น 👉 <span className="bg-amber-200 text-amber-900 px-1.5 py-0.5 rounded font-bold">"ปิด" (Disabled)</span></li>
+                          <li>ที่หัวข้อ <strong>"เว็บฮุก" (Webhook)</strong> ให้กดเปลี่ยนเป็น 👉 <span className="bg-emerald-200 text-emerald-900 px-1.5 py-0.5 rounded font-bold">"เปิด" (Enabled)</span></li>
+                        </ol>
+                        <p className="text-[10px] text-amber-800/80 pt-0.5">
+                          ✨ เมื่อปิดข้อความนี้แล้ว เมื่อลูกค้าพิมพ์เบอร์โทรหรือชื่อในแชท บอทจะค้นหาและส่งรายการออเดอร์ทั้งหมดให้ทันทีแบบ Real-Time 100% ค่ะ!
+                        </p>
+                      </div>
+
                       {/* Thai Setup Guide Accordion/Notes */}
                       <div className="bg-natural-sand/20 p-3 rounded-2xl border border-natural-wheat/60 space-y-2 text-[11px] text-natural-espresso/80">
                         <p className="font-bold text-natural-espresso flex items-center gap-1">
@@ -3097,7 +3117,7 @@ export default function App() {
                         </p>
                         <ol className="list-decimal list-inside space-y-1 text-[10.5px] leading-relaxed text-natural-espresso/70">
                           <li><strong>ตั้งค่า Webhook:</strong> นำ Webhook URL ด้านบนไปใส่ใน LINE Developers Console และเปิดใช้งาน Webhook</li>
-                          <li><strong>เปิดสิทธิ์ใน LINE OA:</strong> เข้า <a href="https://manager.line.biz/" target="_blank" rel="noopener noreferrer" className="text-emerald-700 underline font-bold">manager.line.biz</a> &gt; ตั้งค่า &gt; ตั้งค่าการตอบกลับ &gt; เลือก <strong>เปิด "Webhook"</strong> และ <strong>เปิด "แชท"</strong></li>
+                          <li><strong>เปิดสิทธิ์ใน LINE OA:</strong> เข้า <a href="https://manager.line.biz/" target="_blank" rel="noopener noreferrer" className="text-emerald-700 underline font-bold">manager.line.biz</a> &gt; ตั้งค่า &gt; ตั้งค่าการตอบกลับ &gt; เลือก <strong>เปิด "Webhook"</strong> และ <strong>ปิด "ข้อความตอบกลับอัตโนมัติ"</strong></li>
                           <li><strong>บันทึก Token:</strong> นำ Channel Access Token มาวางในหน้านี้ แล้วกด "บันทึกตั้งค่า"</li>
                         </ol>
                       </div>
