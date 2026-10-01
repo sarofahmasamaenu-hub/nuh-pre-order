@@ -195,7 +195,7 @@ export interface StatusConfig {
   icon: string;
 }
 
-export const STATUS_MAP: Record<OrderStatus, StatusConfig> = {
+const RAW_STATUS_MAP: Record<OrderStatus | string, StatusConfig> = {
   [OrderStatus.RECEIVED]: {
     label: "รับออร์เดอร์จากลูกค้าพร้อมลงระบบ",
     description: "รับรายละเอียดการสั่งซื้อ สัดส่วน และบันทึกข้อมูลเข้าระบบเรียบร้อย",
@@ -413,8 +413,110 @@ export const STATUS_MAP: Record<OrderStatus, StatusConfig> = {
     bgBorderClass: "border-emerald-300 bg-emerald-50/40",
     textColor: "text-emerald-900",
     icon: "Sparkles"
+  },
+
+  // Thai direct aliases to prevent crashes on legacy records
+  "กำลังตัดเย็บ": {
+    label: "ระหว่างการทำแพทเทรินและการเย็บชุด",
+    description: "ช่างขึ้นแพทเทิร์น วางผ้า ตัด และขึ้นโครงเย็บประกอบชิ้นงาน",
+    colorClass: "bg-indigo-50 text-indigo-900 border-indigo-300",
+    bgBorderClass: "border-indigo-300 bg-indigo-50/40",
+    textColor: "text-indigo-900",
+    icon: "Scissors"
+  },
+  "ตัดเย็บ": {
+    label: "ระหว่างการทำแพทเทรินและการเย็บชุด",
+    description: "ช่างขึ้นแพทเทิร์น วางผ้า ตัด และขึ้นโครงเย็บประกอบชิ้นงาน",
+    colorClass: "bg-indigo-50 text-indigo-900 border-indigo-300",
+    bgBorderClass: "border-indigo-300 bg-indigo-50/40",
+    textColor: "text-indigo-900",
+    icon: "Scissors"
+  },
+  "รับออเดอร์": {
+    label: "รับออร์เดอร์จากลูกค้าพร้อมลงระบบ",
+    description: "รับรายละเอียดการสั่งซื้อ สัดส่วน และบันทึกข้อมูลเข้าระบบเรียบร้อย",
+    colorClass: "bg-amber-50 text-amber-900 border-amber-300",
+    bgBorderClass: "border-amber-300 bg-amber-50/40",
+    textColor: "text-amber-900",
+    icon: "ClipboardCheck"
+  },
+  "ออกแบบ": {
+    label: "ออกแบบและจัดเตรียม",
+    description: "กำลังวาดสเก็ตช์และคัดสรรผืนผ้า",
+    colorClass: "bg-orange-50 text-orange-900 border-orange-300",
+    bgBorderClass: "border-orange-300 bg-orange-50/40",
+    textColor: "text-orange-900",
+    icon: "Palette"
+  },
+  "ลองชุด": {
+    label: "ลูกค้าเข้ามาลองชุดเรียบร้อย",
+    description: "ลูกค้าเดินทางเข้ามาลองชุดและตรวจดูความพอดีเรียบร้อย",
+    colorClass: "bg-emerald-50 text-emerald-900 border-emerald-300",
+    bgBorderClass: "border-emerald-300 bg-emerald-50/40",
+    textColor: "text-emerald-900",
+    icon: "UserCheck"
+  },
+  "พร้อมรับ": {
+    label: "รอลูกค้ามารับชุดหน้าสาขา",
+    description: "ชุดเตรียมพร้อมที่หน้าร้าน รอลูกค้าเดินทางมารับมอบชุด",
+    colorClass: "bg-amber-100 text-amber-950 border-amber-300 font-bold",
+    bgBorderClass: "border-amber-300 bg-amber-50/50",
+    textColor: "text-amber-950",
+    icon: "Clock"
+  },
+  "เสร็จสมบูรณ์": {
+    label: "ลูกค้ารับชุดและจบงาน",
+    description: "ลูกค้าได้รับชุดเรียบร้อย เซ็นรับมอบ และจบงานสมบูรณ์แบบ",
+    colorClass: "bg-emerald-100 text-emerald-900 border-emerald-400 font-bold",
+    bgBorderClass: "border-emerald-400 bg-emerald-50/60",
+    textColor: "text-emerald-900",
+    icon: "Sparkles"
+  },
+  "ส่งมอบแล้ว": {
+    label: "ลูกค้ารับชุดและจบงาน",
+    description: "ลูกค้าได้รับชุดเรียบร้อย เซ็นรับมอบ และจบงานสมบูรณ์แบบ",
+    colorClass: "bg-emerald-100 text-emerald-900 border-emerald-400 font-bold",
+    bgBorderClass: "border-emerald-400 bg-emerald-50/60",
+    textColor: "text-emerald-900",
+    icon: "Sparkles"
   }
 };
+
+export const DEFAULT_STATUS_CONFIG: StatusConfig = {
+  label: "กำลังดำเนินการ",
+  description: "อยู่ระหว่างขั้นตอนการดำเนินงานของห้องเสื้อ",
+  colorClass: "bg-indigo-50 text-indigo-900 border-indigo-300",
+  bgBorderClass: "border-indigo-300 bg-indigo-50/40",
+  textColor: "text-indigo-900",
+  icon: "Scissors"
+};
+
+export function getStatusConfig(status?: string | null): StatusConfig {
+  if (!status) return DEFAULT_STATUS_CONFIG;
+  const direct = (RAW_STATUS_MAP as Record<string, StatusConfig>)[status];
+  if (direct) return direct;
+  return {
+    ...DEFAULT_STATUS_CONFIG,
+    label: String(status),
+    description: `สถานะ: ${String(status)}`
+  };
+}
+
+export const STATUS_MAP: Record<OrderStatus | string, StatusConfig> = new Proxy(RAW_STATUS_MAP, {
+  get(target, prop: string | symbol) {
+    if (typeof prop === 'string') {
+      if (prop in target) {
+        return (target as any)[prop];
+      }
+      return {
+        ...DEFAULT_STATUS_CONFIG,
+        label: prop,
+        description: `สถานะ: ${prop}`
+      };
+    }
+    return (target as any)[prop];
+  }
+}) as any;
 
 export const STANDARD_SIZE_CHART: Record<string, {
   chest: string;

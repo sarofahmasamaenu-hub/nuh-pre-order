@@ -3,7 +3,26 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Order } from '../types';
+import { Order, CatalogueItem } from '../types';
+
+/**
+ * Compacts a catalogue item specifically for localStorage caching.
+ * Reduces large base64 image strings so that catalogue never exhausts the 5MB quota.
+ */
+export function compactCatalogueForCache(items: CatalogueItem[]): CatalogueItem[] {
+  if (!Array.isArray(items)) return [];
+  return items.map(item => {
+    if (!item) return item;
+    let img = item.image || '';
+    if (img.startsWith('data:') && img.length > 25000) {
+      img = img.slice(0, 100) + '...[CACHED_ON_CLOUD]';
+    }
+    return {
+      ...item,
+      image: img
+    };
+  });
+}
 
 /**
  * Compacts an order object specifically for localStorage caching.
@@ -45,6 +64,27 @@ export function compactOrdersListForCache(orders: Order[]): Order[] {
 }
 
 /**
+ * Clears all Nunuh-related localStorage caches safely without touching other apps
+ */
+export function clearAllNunuhCaches(): void {
+  if (typeof window === 'undefined' || !window.localStorage) return;
+  try {
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && (key.startsWith('nunuh_') || key.includes('nunuh'))) {
+        keysToRemove.push(key);
+      }
+    }
+    keysToRemove.forEach(k => {
+      try { localStorage.removeItem(k); } catch (e) {}
+    });
+  } catch (e) {
+    console.warn('[SafeStorage] Error clearing nunuh caches:', e);
+  }
+}
+
+/**
  * Safely writes a value to localStorage without throwing QuotaExceededError or crashing React.
  */
 export function safeSetLocalStorage(key: string, value: any): boolean {
@@ -52,53 +92,53 @@ export function safeSetLocalStorage(key: string, value: any): boolean {
     return false;
   }
 
-  const stringValue = typeof value === 'string' ? value : JSON.stringify(value);
-
   try {
+    let toStore = value;
+    if (key === 'nunuh_catalogue' && Array.isArray(value)) {
+      toStore = compactCatalogueForCache(value);
+    } else if (key === 'nunuh_orders' && Array.isArray(value)) {
+      toStore = compactOrdersListForCache(value);
+    }
+    const stringValue = typeof toStore === 'string' ? toStore : JSON.stringify(toStore);
     localStorage.setItem(key, stringValue);
     return true;
   } catch (error: any) {
     console.warn(`[SafeStorage] Quota exceeded or error setting key "${key}":`, error?.message || error);
 
-    // If setting nunuh_orders failed due to quota, try compacting
-    if (key === 'nunuh_orders') {
-      try {
+    // If setting failed due to quota, try deep cleaning non-essential caches
+    try {
+      localStorage.removeItem('nunuh_last_draft_order');
+      localStorage.removeItem('nunuh_reviews');
+      
+      if (key === 'nunuh_orders') {
         let ordersArray: Order[] = [];
         if (typeof value === 'string') {
           try { ordersArray = JSON.parse(value); } catch (e) {}
         } else if (Array.isArray(value)) {
           ordersArray = value;
         }
-
         if (ordersArray.length > 0) {
           const compacted = compactOrdersListForCache(ordersArray);
           localStorage.setItem('nunuh_orders', JSON.stringify(compacted));
-          console.info(`[SafeStorage] Successfully stored compacted orders cache (${compacted.length} items).`);
           return true;
         }
-      } catch (compactError) {
-        console.warn('[SafeStorage] Compacted storage also exceeded quota. Cleaning temp caches...', compactError);
+      } else if (key === 'nunuh_catalogue') {
+        let catArray: CatalogueItem[] = [];
+        if (typeof value === 'string') {
+          try { catArray = JSON.parse(value); } catch (e) {}
+        } else if (Array.isArray(value)) {
+          catArray = value;
+        }
+        if (catArray.length > 0) {
+          const compacted = compactCatalogueForCache(catArray);
+          localStorage.setItem('nunuh_catalogue', JSON.stringify(compacted));
+          return true;
+        }
       }
-    }
-
-    // Try cleaning up old non-essential caches
-    try {
-      localStorage.removeItem('nunuh_last_draft_order');
-      localStorage.removeItem('nunuh_active_staff_list');
-      localStorage.removeItem('nunuh_reviews');
-      
-      // Try setting one last time
-      if (key === 'nunuh_orders' && typeof value !== 'string') {
-        const compacted = compactOrdersListForCache(value);
-        localStorage.setItem(key, JSON.stringify(compacted));
-      } else {
-        localStorage.setItem(key, stringValue.slice(0, 100000)); // Cap length
-      }
-      return true;
     } catch (finalError) {
-      console.warn(`[SafeStorage] Could not persist key "${key}" to localStorage. Memory and Firestore will be used.`, finalError);
-      return false;
+      console.warn(`[SafeStorage] Could not persist key "${key}" to localStorage. Operating in-memory.`, finalError);
     }
+    return false;
   }
 }
 

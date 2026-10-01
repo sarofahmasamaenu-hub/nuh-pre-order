@@ -38,6 +38,7 @@ import PrintOrderModal from './PrintOrderModal';
 import FeedbackSection from './FeedbackSection';
 import { compressImage } from '../utils/image';
 import { getDaysDifference } from '../utils/dateDuration';
+import { saveOrderToFirestore } from '../firebase';
 
 interface CustomerPortalProps {
   orders: Order[];
@@ -502,6 +503,24 @@ export default function CustomerPortal({
           if (isCustomerLocked && isCustomerIdentified && matchedOrders && matchedOrders.length > 0) {
             setIsCustomerIdentityLocked(true);
             setLockedCustomerIdentityQuery(matchedOrders[0].customerPhone || matchedOrders[0].customerName || matchedOrders[0].orderNumber || queryToUse);
+          }
+
+          // Auto-link lineUserId if customer opened the link from LINE chatbot
+          const urlLineUserId = params.get('lineUserId');
+          if (urlLineUserId && matchedOrders && matchedOrders.length > 0) {
+            let hasNewLink = false;
+            const synced = orders.map(o => {
+              if (matchedOrders.some(m => m.id === o.id) && o.lineUserId !== urlLineUserId) {
+                hasNewLink = true;
+                const updated = { ...o, lineUserId: urlLineUserId, updatedAt: Date.now() };
+                saveOrderToFirestore(updated).catch(() => {});
+                return updated;
+              }
+              return o;
+            });
+            if (hasNewLink && onUpdateOrders) {
+              onUpdateOrders(synced);
+            }
           }
         }
       }
@@ -1448,7 +1467,14 @@ export default function CustomerPortal({
                     displayedOrders.map((order) => {
                       const isCompleted = order.status === OrderStatus.COMPLETED;
                       const progress = getStatusProgress(order.status);
-                      const currentStatus = STATUS_MAP[order.status];
+                      const currentStatus = STATUS_MAP[order.status] || {
+                        label: order.status || 'รอดำเนินการ',
+                        description: order.status || 'รอดำเนินการ',
+                        colorClass: 'bg-indigo-50 text-indigo-900 border-indigo-300',
+                        bgBorderClass: 'border-indigo-300 bg-indigo-50/40',
+                        textColor: 'text-indigo-900',
+                        icon: 'Scissors'
+                      };
                       const unpaid = Math.max(0, order.price - order.deposit - (order.discount || 0) - (order.finalPaymentAmount || 0));
 
                       {/* RENDERING ACTIVE ORDER (NEW/IN PROGRESS) */}

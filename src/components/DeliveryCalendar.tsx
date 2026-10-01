@@ -229,7 +229,14 @@ export default function DeliveryCalendar({ orders, onUpdateOrderStatus }: Delive
             
             <div className="divide-y divide-natural-wheat/60">
               {orders.filter(o => o.deliveryDate === selectedDateStr).map((order) => {
-                const cfg = STATUS_MAP[order.status];
+                const cfg = STATUS_MAP[order.status] || {
+                  label: order.status || 'รอดำเนินการ',
+                  description: order.status || 'รอดำเนินการ',
+                  colorClass: 'bg-indigo-50 text-indigo-900 border-indigo-300',
+                  bgBorderClass: 'border-indigo-300 bg-indigo-50/40',
+                  textColor: 'text-indigo-900',
+                  icon: 'Scissors'
+                };
                 return (
                   <div key={order.id} className="py-2.5 flex justify-between items-center first:pt-0 last:pb-0">
                     <div>
@@ -324,7 +331,14 @@ export default function DeliveryCalendar({ orders, onUpdateOrderStatus }: Delive
                 timeText = `⏳ อีก ${diffDays} วัน`;
               }
 
-              const statusCfg = STATUS_MAP[order.status];
+              const statusCfg = STATUS_MAP[order.status] || {
+                label: order.status || 'รอดำเนินการ',
+                description: order.status || 'รอดำเนินการ',
+                colorClass: 'bg-indigo-50 text-indigo-900 border-indigo-300',
+                bgBorderClass: 'border-indigo-300 bg-indigo-50/40',
+                textColor: 'text-indigo-900',
+                icon: 'Scissors'
+              };
 
               return (
                 <div 

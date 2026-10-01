@@ -34,21 +34,25 @@ export default function DashboardStats({ orders, onSelectTab }: DashboardStatsPr
   const [selectedBranch, setSelectedBranch] = useState<string>('ALL');
 
   // ฟังก์ชันดึงชื่อสาขาของออเดอร์
-  const getOrderBranch = (o: Order) => (o.branch || o.staffBranch || 'สาขานราธิวาส').trim();
+  const getOrderBranch = (o?: Order) => {
+    if (!o) return 'สาขานราธิวาส';
+    return (o.branch || o.staffBranch || 'สาขานราธิวาส').trim();
+  };
 
   // สร้างรายชื่อสาขาทั้งหมดที่มีในระบบ
   const knownBranches = ['สาขานราธิวาส', 'สาขายะลา', 'สาขาปัตตานี', 'สาขาหาดใหญ่'];
+  const safeOrdersList = (orders || []).filter(Boolean);
   const allBranches = Array.from(
     new Set([
       ...knownBranches,
-      ...orders.map(o => getOrderBranch(o)).filter(Boolean)
+      ...safeOrdersList.map(o => getOrderBranch(o)).filter(Boolean)
     ])
   );
 
   // กรองออเดอร์ตามสาขาที่เลือก
   const displayedOrders = selectedBranch === 'ALL'
-    ? orders
-    : orders.filter(o => getOrderBranch(o) === selectedBranch);
+    ? safeOrdersList
+    : safeOrdersList.filter(o => getOrderBranch(o) === selectedBranch);
 
   // สถิติทั้งหมด (ตามสาขาที่กรอง)
   const totalOrders = displayedOrders.length;

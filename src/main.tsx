@@ -2,6 +2,7 @@ import React, { StrictMode, ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
+import { clearAllNunuhCaches } from './utils/storage.ts';
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -23,17 +24,17 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
 
   override componentDidCatch(error: Error, errorInfo: any) {
     console.error('App ErrorBoundary caught:', error, errorInfo);
-    // If it's a QuotaExceededError, safely clear bloated local items so subsequent reloads succeed immediately
-    if (error?.name === 'QuotaExceededError' || error?.message?.includes('quota')) {
-      try {
-        localStorage.removeItem('nunuh_orders');
-        localStorage.removeItem('nunuh_catalogue');
-        localStorage.removeItem('nunuh_reviews');
-        localStorage.removeItem('nunuh_active_staff_list');
-        localStorage.removeItem('nunuh_last_draft_order');
-      } catch (e) {}
-    }
+    // Safely clear bloated local storage so subsequent runs load fresh
+    clearAllNunuhCaches();
   }
+
+  handleCleanReload = () => {
+    try {
+      clearAllNunuhCaches();
+      sessionStorage.clear();
+    } catch (e) {}
+    window.location.reload();
+  };
 
   override render() {
     if (this.state.hasError) {
@@ -45,20 +46,14 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
             </div>
             <h1 className="text-xl font-bold font-serif">ระบบจัดการห้องเสื้อ NUNUH</h1>
             <p className="text-sm text-[#2D2421]/70 leading-relaxed">
-              ระบบตรวจพบการซิงค์ข้อมูลชุดใหม่จากคลาวด์ กำลังเตรียมการโหลดข้อมูลสดจาก Firebase กรุณากดปุ่มด้านล่างเพื่อเข้าสู่ระบบค่ะ
+              ระบบกำลังเชื่อมต่อและโหลดข้อมูลสดล่าสุดจากคลาวด์ กรุณากดปุ่มด้านล่างเพื่อเข้าสู่ระบบค่ะ
             </p>
             <div className="space-y-2 pt-2">
               <button
-                onClick={() => {
-                  try {
-                    localStorage.removeItem('nunuh_orders');
-                    localStorage.removeItem('nunuh_last_draft_order');
-                  } catch (e) {}
-                  window.location.reload();
-                }}
-                className="w-full py-3 bg-[#B96248] hover:bg-[#984E37] text-white font-bold rounded-xl transition-all shadow-md cursor-pointer flex items-center justify-center gap-2 text-sm"
+                onClick={this.handleCleanReload}
+                className="w-full py-3.5 bg-[#B96248] hover:bg-[#984E37] text-white font-bold rounded-xl transition-all shadow-md cursor-pointer flex items-center justify-center gap-2 text-sm"
               >
-                <span>🔄 เริ่มต้นใช้งานทันที (Load Fresh from Cloud)</span>
+                <span>🔄 เข้าสู่ระบบและโหลดข้อมูลสด (Load Fresh from Cloud)</span>
               </button>
             </div>
           </div>

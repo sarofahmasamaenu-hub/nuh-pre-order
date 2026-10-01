@@ -1615,7 +1615,14 @@ export default function OrderTracker({
           </div>
         ) : (
           filteredOrders.map((order) => {
-            const currentStatusCfg = STATUS_MAP[order.status];
+            const currentStatusCfg = STATUS_MAP[order.status] || {
+              label: order.status || 'รอดำเนินการ',
+              description: order.status || 'รอดำเนินการ',
+              colorClass: 'bg-indigo-50 text-indigo-900 border-indigo-300',
+              bgBorderClass: 'border-indigo-300 bg-indigo-50/40',
+              textColor: 'text-indigo-900',
+              icon: 'Scissors'
+            };
             const isExpanded = expandedOrderId === order.id;
             const unpaid = getUnpaidBalance(order);
             const orderImage = order.customImage || (order.selectedDesignId ? catalogue.find(item => item.id === order.selectedDesignId)?.image : null);
@@ -1892,7 +1899,7 @@ export default function OrderTracker({
                     </div>
 
                     {/* Status History Timeline Log with Stage Durations */}
-                    {order.statusHistory && order.statusHistory.length > 0 && (
+                    {Array.isArray(order.statusHistory) && order.statusHistory.length > 0 && (
                       <div className="bg-natural-cream/30 border border-natural-wheat/80 rounded-2xl p-4 space-y-3">
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 border-b border-natural-sand/60 pb-2">
                           <h6 className="text-xs font-bold text-natural-espresso flex items-center gap-1.5">

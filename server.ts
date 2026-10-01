@@ -31,6 +31,18 @@ import {
   getReviewsFromDb,
   saveReviewsToDb
 } from "./db";
+import {
+  smartMatchOrders,
+  formatSingleOrderLineMessage,
+  formatMultipleOrdersLineMessage,
+  formatCustomerOrdersReport,
+  buildOrdersLineFlexMessage,
+  formatOrderNotFoundMessage,
+  formatNewOrderCustomerConfirmation,
+  formatNewOrderOwnerAlert,
+  STATUS_MAP_TH,
+  getStatusDetails
+} from "./src/utils/lineMatcher";
 
 dotenv.config();
 
@@ -88,33 +100,6 @@ const CATALOGUE_FILE = path.join(process.cwd(), 'catalogue.json');
 const SETTINGS_FILE = path.join(process.cwd(), 'settings.json');
 const REVIEWS_FILE = path.join(process.cwd(), 'reviews.json');
 let lastKnownPublicUrl = "";
-
-const STATUS_MAP_TH: Record<string, { label: string; desc: string }> = {
-  RECEIVED: { label: "1. รับออเดอร์เรียบร้อย", desc: "บันทึกข้อมูลและสัดส่วนเข้าระบบเรียบร้อยแล้ว" },
-  DESIGNING: { label: "2. สรุปแบบ/เตรียมผ้า", desc: "วางแพทเทิร์น ออกแบบ และเตรียมผ้าตัดเย็บ" },
-  FABRIC_ORDERED: { label: "สั่งผ้า/อะไหล่", desc: "อยู่ระหว่างรอผ้าหรืออุปกรณ์สั่งพิเศษ" },
-  FABRIC_RECEIVED: { label: "ได้รับผ้าแล้ว", desc: "ผ้าและอุปกรณ์จัดเตรียมครบถ้วน พร้อมขึ้นแบบ" },
-  PATTERN_MAKING: { label: "สร้างแพทเทิร์น", desc: "สร้างแบบแพทเทิร์นตามสัดส่วนเฉพาะบุคคล" },
-  CUTTING: { label: "3. ขึ้นแบบและตัดผ้า", desc: "ช่างตัดผ้าตามแพทเทิร์นเรียบร้อยแล้ว" },
-  SEWING: { label: "4. กำลังเย็บประกอบ", desc: "ช่างกำลังเย็บขึ้นโครงชุดและเก็บรายละเอียด" },
-  PATTERN_SEWING: { label: "ทำแพทเทิร์น/ตัดเย็บ", desc: "กำลังสร้างแพทเทิร์นและเย็บประกอบชุด" },
-  FIRST_FITTING_READY: { label: "พร้อมลองโครงชุด", desc: "โครงชุดพร้อมสำหรับการลองโครงครั้งที่ 1" },
-  FIRST_FITTING_DONE: { label: "ลองโครงเรียบร้อย", desc: "ปรับแก้สัดส่วนตามผลการลองโครงชุด" },
-  SECOND_FITTING_READY: { label: "พร้อมลองเก็บทรง", desc: "ชุดพร้อมสำหรับการลองเก็บทรงครั้งที่ 2" },
-  SECOND_FITTING_DONE: { label: "ลองเก็บทรงเรียบร้อย", desc: "ปรับแต่งสัดส่วนรอบสุดท้ายก่อนเก็บรายละเอียด" },
-  EMBROIDERY: { label: "งานปัก/ลูกไม้", desc: "อยู่ระหว่างงานปัก ประดับคริสตัล หรือติดลูกไม้" },
-  HAND_FINISHING: { label: "สอยมือ/เก็บริม", desc: "เก็บรายละเอียดด้วยมือและงานฝีมือประณีต" },
-  FITTING: { label: "5. ขั้นตอนฟิตติ้ง", desc: "นัดหมายลองชุดและปรับแต่งทรงตามรูปร่าง" },
-  ALTERING: { label: "ปรับแก้ทรง", desc: "ช่างกำลังปรับแก้สัดส่วนตามที่นัดฟิตติ้ง" },
-  VERIFY_DETAILS: { label: "ตรวจสอบรายละเอียด", desc: "ตรวจสอบความถูกต้องของแบบชุดและสัดส่วน" },
-  QUALITY_CHECK: { label: "ตรวจเช็กคุณภาพ (QC)", desc: "ตรวจสอบความประณีตของตะเข็บ ซิป และทรงชุด" },
-  IRONING_PACKING: { label: "รีดอัดและแพ็กชุด", desc: "รีดไอน้ำจัดทรงชุดและแพ็กใส่ถุงคลุมเสื้อผ้า" },
-  READY: { label: "6. พร้อมส่งมอบ/รับชุด", desc: "ชุดตัดเย็บเสร็จสมบูรณ์ 100% พร้อมนัดรับชุดหรือจัดส่ง" },
-  SHIPPED: { label: "จัดส่งพัสดุแล้ว", desc: "จัดส่งผ่านบริษัทขนส่งเรียบร้อยแล้ว" },
-  DELIVERED: { label: "พัสดุถึงผู้รับแล้ว", desc: "พัสดุจัดส่งถึงลูกค้าเรียบร้อยแล้ว" },
-  COMPLETED: { label: "7. ส่งมอบสำเร็จ 🎉", desc: "ลูกค้าตรวจรับชุดและเซ็นรับมอบเรียบร้อยแล้ว" },
-  CANCELLED: { label: "ยกเลิกออเดอร์", desc: "รายการออเดอร์นี้ถูกยกเลิก" }
-};
 
 // In-memory caches for fast access and resilience against disk write glitches
 let cachedOrders: any[] | null = null;
@@ -179,8 +164,83 @@ function safeResilientReadJson<T>(filePath: string, fallback: T): T {
   return fallback;
 }
 
-// Helper to read orders from PostgreSQL with fallback to file and cache
+const firebaseConfig = {
+  apiKey: "AIzaSyDbt86w9Tl3HTlmlQwr4P7StoBKyEC56vc",
+  authDomain: "nuhpre-order.firebaseapp.com",
+  projectId: "nuhpre-order",
+  storageBucket: "nuhpre-order.firebasestorage.app",
+  messagingSenderId: "81774640286",
+  appId: "1:81774640286:web:e596d6d5bb638d11380f8f",
+  measurementId: "G-YNVY3Y03PY"
+};
+
+let firestoreDb: any = null;
+function getFirestoreDb() {
+  if (!firestoreDb) {
+    try {
+      const fbApp = getFirebaseApps().length > 0 ? getFirebaseApp() : initFirebaseApp(firebaseConfig);
+      firestoreDb = getFirestore(fbApp);
+    } catch (e) {
+      console.warn("Failed to initialize Firebase in server:", e);
+    }
+  }
+  return firestoreDb;
+}
+
+// Helper to read deleted order IDs
+async function readDeletedOrdersOnServer(): Promise<string[]> {
+  if (isPostgresActive()) {
+    try {
+      const dbDeleted = await getDeletedOrderIdsFromDb();
+      if (dbDeleted && dbDeleted.length > 0) {
+        cachedDeletedOrders = dbDeleted;
+        return dbDeleted;
+      }
+    } catch (e) {
+      console.error("Error reading deleted orders from DB:", e);
+    }
+  }
+
+  try {
+    const fileDeleted = safeResilientReadJson<string[]>(DELETED_ORDERS_FILE, cachedDeletedOrders || []);
+    if (fileDeleted && Array.isArray(fileDeleted)) {
+      cachedDeletedOrders = fileDeleted;
+      return fileDeleted;
+    }
+  } catch (err) {
+    console.error("Error reading deleted orders from file:", err);
+  }
+
+  return cachedDeletedOrders || [];
+}
+
+// Helper to read orders from Firestore with fallback to PostgreSQL, cache and file
 async function readOrdersOnServer(): Promise<any[]> {
+  const db = getFirestoreDb();
+  if (db) {
+    try {
+      const snap = await getDocs(collection(db, "orders"));
+      if (!snap.empty) {
+        const firestoreOrders: any[] = [];
+        const deletedIds = await readDeletedOrdersOnServer();
+        const deletedSet = new Set(deletedIds);
+        snap.forEach((docSnap) => {
+          if (!deletedSet.has(docSnap.id)) {
+            const data = docSnap.data();
+            firestoreOrders.push({ ...data, id: data.id || docSnap.id });
+          }
+        });
+        if (firestoreOrders.length > 0) {
+          cachedOrders = firestoreOrders;
+          safeAtomicWriteJson(ORDERS_FILE, firestoreOrders);
+          return firestoreOrders;
+        }
+      }
+    } catch (fsErr) {
+      console.warn("[Firestore] Error in readOrdersOnServer:", fsErr);
+    }
+  }
+
   if (isPostgresActive()) {
     try {
       const dbOrders = await getOrdersFromDb();
@@ -220,56 +280,6 @@ async function writeOrdersOnServer(orders: any[]) {
   }
 
   safeAtomicWriteJson(ORDERS_FILE, orders);
-}
-
-// Helper to read deleted order IDs
-async function readDeletedOrdersOnServer(): Promise<string[]> {
-  if (isPostgresActive()) {
-    try {
-      const dbDeleted = await getDeletedOrderIdsFromDb();
-      if (dbDeleted && dbDeleted.length > 0) {
-        cachedDeletedOrders = dbDeleted;
-        return dbDeleted;
-      }
-    } catch (e) {
-      console.error("Error reading deleted orders from DB:", e);
-    }
-  }
-
-  try {
-    const fileDeleted = safeResilientReadJson<string[]>(DELETED_ORDERS_FILE, cachedDeletedOrders || []);
-    if (fileDeleted && Array.isArray(fileDeleted)) {
-      cachedDeletedOrders = fileDeleted;
-      return fileDeleted;
-    }
-  } catch (err) {
-    console.error("Error reading deleted orders from file:", err);
-  }
-
-  return cachedDeletedOrders || [];
-}
-
-const firebaseConfig = {
-  apiKey: "AIzaSyDbt86w9Tl3HTlmlQwr4P7StoBKyEC56vc",
-  authDomain: "nuhpre-order.firebaseapp.com",
-  projectId: "nuhpre-order",
-  storageBucket: "nuhpre-order.firebasestorage.app",
-  messagingSenderId: "81774640286",
-  appId: "1:81774640286:web:e596d6d5bb638d11380f8f",
-  measurementId: "G-YNVY3Y03PY"
-};
-
-let firestoreDb: any = null;
-function getFirestoreDb() {
-  if (!firestoreDb) {
-    try {
-      const fbApp = getFirebaseApps().length > 0 ? getFirebaseApp() : initFirebaseApp(firebaseConfig);
-      firestoreDb = getFirestore(fbApp);
-    } catch (e) {
-      console.warn("Failed to initialize Firebase in server:", e);
-    }
-  }
-  return firestoreDb;
 }
 
 function sanitizeForFirestore(obj: any): any {
@@ -910,7 +920,12 @@ async function getEffectiveLineConfig(req?: any) {
   const oaId = (settings.lineOaId || process.env.LINE_OA_ID || "@237aynfq").trim();
   const host = req ? (req.get('x-forwarded-host') || req.get('host')) : '';
   const proto = req ? (req.get('x-forwarded-proto') || 'https') : 'https';
-  const rawBaseUrl = lastKnownPublicUrl || process.env.PUBLIC_APP_URL || (host ? `${proto}://${host}` : '');
+
+  const requestBaseUrl = host ? `${proto}://${host}` : '';
+  const configuredUrl = (settings.publicUrl || '').trim();
+  const validConfigured = (configuredUrl && !configuredUrl.includes('nunuh-pre-order2026.onrender.com') && !configuredUrl.includes('nunuh.onrender.com')) ? configuredUrl : '';
+  const appUrl = (process.env.APP_URL || '').trim();
+  const rawBaseUrl = validConfigured || appUrl || requestBaseUrl || lastKnownPublicUrl || process.env.PUBLIC_APP_URL || '';
   const cleanBase = (rawBaseUrl || '').replace(/\/+$/, '');
   const webhookUrl = cleanBase ? `${cleanBase}/api/webhook/line` : '/api/webhook/line';
   
@@ -1001,6 +1016,77 @@ app.post("/api/send-status", async (req: any, res) => {
     }
   } catch (err: any) {
     console.error("❌ Error sending push message:", err);
+    return res.status(500).json({ error: err.message || "Internal server error" });
+  }
+});
+
+// API Endpoint to send instant notification when a new order is recorded
+app.post("/api/notify-order-created", async (req: any, res) => {
+  try {
+    const { order } = req.body || {};
+    if (!order) {
+      return res.status(400).json({ error: "Order object is required" });
+    }
+
+    const settings = await readSettingsOnServer();
+    const lineConfig = await getEffectiveLineConfig(req);
+    const token = lineConfig.token;
+    const baseAppUrl = lineConfig.webhookUrl.replace(/\/api\/webhook\/line$/, '');
+
+    let customerNotified = false;
+    let ownerNotified = false;
+
+    if (token) {
+      // 1. If customer lineUserId is known, push confirmation to customer
+      if (order.lineUserId) {
+        try {
+          const customerMsg = formatNewOrderCustomerConfirmation(order, baseAppUrl);
+          const pushRes = await fetch("https://api.line.me/v2/bot/message/push", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${token}`
+            },
+            body: JSON.stringify({
+              to: order.lineUserId,
+              messages: [{ type: "text", text: customerMsg }]
+            })
+          });
+          customerNotified = pushRes.ok;
+          if (!pushRes.ok) {
+            console.warn("[LINE Push] Customer push failed:", await pushRes.text());
+          }
+        } catch (cErr) {
+          console.warn("[LINE Push] Error pushing to customer:", cErr);
+        }
+      }
+
+      // 2. If shop owner Line User ID is configured in settings or environment, send alert to owner
+      const ownerUserId = (settings.ownerLineUserId || process.env.OWNER_LINE_USER_ID || "").trim();
+      if (ownerUserId) {
+        try {
+          const ownerMsg = formatNewOrderOwnerAlert(order, baseAppUrl);
+          const ownerRes = await fetch("https://api.line.me/v2/bot/message/push", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${token}`
+            },
+            body: JSON.stringify({
+              to: ownerUserId,
+              messages: [{ type: "text", text: ownerMsg }]
+            })
+          });
+          ownerNotified = ownerRes.ok;
+        } catch (oErr) {
+          console.warn("[LINE Push] Error pushing to owner:", oErr);
+        }
+      }
+    }
+
+    return res.json({ success: true, customerNotified, ownerNotified });
+  } catch (err: any) {
+    console.error("Error in /api/notify-order-created:", err);
     return res.status(500).json({ error: err.message || "Internal server error" });
   }
 });
@@ -1190,6 +1276,91 @@ app.get("/api/line-config-status", async (req, res) => {
   });
 });
 
+// API Endpoint to query current registered webhook endpoint directly from LINE Messaging API
+app.get("/api/line/webhook-endpoint", async (req, res) => {
+  const lineConfig = await getEffectiveLineConfig(req);
+  const token = lineConfig.token;
+  if (!token) {
+    return res.status(400).json({ error: "LINE Channel Access Token not configured" });
+  }
+
+  try {
+    const response = await fetch("https://api.line.me/v2/bot/channel/webhook/endpoint", {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const data = await response.json();
+    return res.json(data);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || "Failed to query LINE webhook endpoint" });
+  }
+});
+
+// API Endpoint to test webhook connectivity directly with LINE's server
+app.post("/api/line/test-webhook", async (req, res) => {
+  const lineConfig = await getEffectiveLineConfig(req);
+  const token = lineConfig.token;
+  if (!token) {
+    return res.status(400).json({ error: "LINE Channel Access Token not configured" });
+  }
+
+  try {
+    const { endpoint } = req.body || {};
+    const testBody = endpoint ? { endpoint } : {};
+    const response = await fetch("https://api.line.me/v2/bot/channel/webhook/test", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify(testBody)
+    });
+    const data = await response.json();
+    return res.json(data);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || "Failed to test LINE webhook" });
+  }
+});
+
+// API Endpoint to update the webhook endpoint registered with LINE
+app.post("/api/line/set-webhook-endpoint", async (req, res) => {
+  const lineConfig = await getEffectiveLineConfig(req);
+  const token = lineConfig.token;
+  if (!token) {
+    return res.status(400).json({ error: "LINE Channel Access Token not configured" });
+  }
+
+  const { endpoint } = req.body || {};
+  if (!endpoint || !endpoint.startsWith("https://")) {
+    return res.status(400).json({ error: "Valid HTTPS Webhook endpoint is required" });
+  }
+
+  try {
+    const response = await fetch("https://api.line.me/v2/bot/channel/webhook/endpoint", {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({ endpoint: endpoint.trim() })
+    });
+
+    if (response.ok) {
+      // Also update settings.publicUrl if needed
+      const cleanBase = endpoint.replace(/\/api\/webhook\/line$/, "").replace(/\/webhook\/line$/, "");
+      const settings = await readSettingsOnServer();
+      settings.publicUrl = cleanBase;
+      await writeSettingsOnServer(settings);
+
+      return res.json({ success: true, endpoint: endpoint.trim() });
+    } else {
+      const errText = await response.text();
+      return res.status(response.status).json({ error: errText });
+    }
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || "Failed to set LINE webhook endpoint" });
+  }
+});
+
 // LINE Webhook Endpoint (Supports GET for browser status check & POST for LINE Messaging API Events & Verification)
 app.get(["/api/webhook/line", "/webhook/line", "/api/line/webhook", "/api/line-webhook"], (req, res) => {
   res.status(200).json({
@@ -1241,162 +1412,80 @@ app.post(["/api/webhook/line", "/webhook/line", "/api/line/webhook", "/api/line-
 
         console.log(`Received user text message: "${originalText}"`);
 
-        // Lookup Orders on Server
+        // Lookup Orders on Server (loads fresh orders from Firestore)
         const orders = await readOrdersOnServer();
-        const cleanSearchText = text.replace(/[- \s\t\n]/g, ""); // Strip hyphens & spaces
+        const matchedOrders = smartMatchOrders(originalText, orders, event.source?.userId);
 
-        // Extract phone numbers or order numbers from incoming text
-        const phoneMatch = originalText.match(/0\d{8,9}/);
-        const orderNumMatch = originalText.match(/NU-?\d{4,6}/i);
-        const extractedPhone = phoneMatch ? phoneMatch[0] : "";
-        const extractedOrderNum = orderNumMatch ? orderNumMatch[0].replace(/-/g, "").toLowerCase() : "";
-
-        // Normalize text by removing common Thai titles/prefixes (e.g. คุณ, นาง, น.ส., นางสาว, ด.ญ., ด.ช., พี่, น้อง)
-        const strippedTitleText = text.replace(/^(คุณ|นางสาว|น\.ส\.|นาง|นาย|ด\.ญ\.|ด\.ช\.|พี่|น้อง)\s*/i, "").trim();
-        const cleanStrippedTitle = strippedTitleText.replace(/[- \s\t\n]/g, "");
-
-        const matchedOrders = orders.filter((o: any) => {
-          if (!o) return false;
-          const phoneClean = (o.customerPhone || "").replace(/[- \s]/g, "");
-          const orderNumClean = (o.orderNumber || "").replace(/[- \s]/g, "").toLowerCase();
-          const nameClean = (o.customerName || "").toLowerCase();
-          const nameCleanNoTitle = nameClean.replace(/^(คุณ|นางสาว|น\.ส\.|นาง|นาย|ด\.ญ\.|ด\.ช\.|พี่|น้อง)\s*/i, "").trim();
-          const nameNoSpaces = nameCleanNoTitle.replace(/[- \s\t\n]/g, "");
-          const nicknameClean = (o.customerNickname || "").toLowerCase();
-          const lineUid = (o.lineUserId || "").toLowerCase();
-
-          // Phone matching
-          const matchesPhone = extractedPhone && phoneClean.includes(extractedPhone);
-          const matchesCleanSearchPhone = cleanSearchText.length >= 4 && phoneClean.includes(cleanSearchText);
-          
-          // Order number matching
-          const matchesExtractedOrder = extractedOrderNum && orderNumClean.includes(extractedOrderNum);
-          const matchesCleanSearchOrder = cleanSearchText.length >= 3 && orderNumClean.includes(cleanSearchText);
-          
-          // Direct name matching
-          const matchesDirectName = nameClean.includes(text) || (nameCleanNoTitle && nameCleanNoTitle.includes(strippedTitleText));
-          const matchesNickname = (nicknameClean && (nicknameClean.includes(text) || nicknameClean.includes(strippedTitleText) || text.includes(nicknameClean)));
-          const matchesNoSpaceName = cleanStrippedTitle.length >= 2 && nameNoSpaces.includes(cleanStrippedTitle);
-          
-          // Word tokens matching (e.g. first name or last name match)
-          const words = text.split(/\s+/).filter((w: string) => w.length >= 2);
-          const matchesNameWords = words.length > 0 && words.some((w: string) => 
-            nameClean.includes(w) || 
-            nameCleanNoTitle.includes(w) || 
-            (nicknameClean && nicknameClean.includes(w))
-          );
-          
-          // Line user ID matching
-          const matchesLineUid = event.source?.userId && lineUid === event.source.userId.toLowerCase();
-
-          return (
-            matchesPhone ||
-            matchesCleanSearchPhone ||
-            matchesExtractedOrder ||
-            matchesCleanSearchOrder ||
-            matchesDirectName ||
-            matchesNickname ||
-            matchesNoSpaceName ||
-            matchesNameWords ||
-            matchesLineUid
-          );
-        });
-
-        // Save lineUserId to matched orders so admin can message/open chat directly later
+        // Auto-link lineUserId in Firestore and in server memory
         if (matchedOrders.length > 0 && event.source?.userId) {
+          const userId = event.source.userId;
+          const fsDb = getFirestoreDb();
           let updatedAny = false;
-          const updatedOrders = orders.map((o: any) => {
-            if (matchedOrders.some((mo: any) => mo.id === o.id)) {
-              if (o.lineUserId !== event.source.userId) {
-                o.lineUserId = event.source.userId;
-                updatedAny = true;
+          for (const mo of matchedOrders) {
+            if (mo && mo.id && mo.lineUserId !== userId) {
+              mo.lineUserId = userId;
+              mo.updatedAt = Date.now();
+              updatedAny = true;
+              if (fsDb) {
+                setDoc(doc(fsDb, "orders", mo.id), { lineUserId: userId, updatedAt: Date.now() }, { merge: true }).catch((err) => {
+                  console.warn("[Firestore] Failed to save lineUserId to order:", err);
+                });
               }
             }
-            return o;
-          });
+          }
           if (updatedAny) {
-            await writeOrdersOnServer(updatedOrders);
-            console.log(`[Webhook] Auto-linked lineUserId: ${event.source.userId} to matched orders.`);
+            await writeOrdersOnServer(orders);
+            broadcastSSEEvent("orders_updated", { orders });
+            console.log(`[Webhook] Auto-linked lineUserId: ${userId} to ${matchedOrders.length} order(s).`);
           }
         }
 
         // Formulate Rich Response
         let replyMessage = "";
-        const baseAppUrl = lastKnownPublicUrl || process.env.PUBLIC_APP_URL || `https://${req.get('host')}`;
+        const proto = req.get('x-forwarded-proto') || 'https';
+        const host = req.get('x-forwarded-host') || req.get('host');
+        const settings = await readSettingsOnServer();
+        const configuredUrl = (settings.publicUrl || '').trim();
+        const appUrl = (process.env.APP_URL || '').trim();
+        const baseAppUrl = (configuredUrl || appUrl || lastKnownPublicUrl || (host ? `${proto}://${host}` : '') || process.env.PUBLIC_APP_URL || '').replace(/\/+$/, '');
 
         if (matchedOrders.length === 0) {
-          const isLikelySearchQuery = /^(\+?66|0)[0-9]{8,9}$/.test(cleanSearchText) || /^[A-Za-z0-9_-]{4,15}$/.test(cleanSearchText);
-          
-          if (isLikelySearchQuery && cleanSearchText.length >= 6) {
-            replyMessage = `สวัสดีค่ะคุณลูกค้า ⚜️ NUNUH Boutique ⚜️ ยินดีให้บริการค่ะ\n\n❌ ขออภัยค่ะ ไม่พบข้อมูลออเดอร์เสื้อผ้าของคุณลูกค้าจากคำค้นหา "${originalText}"\n\n📌 วิธีการตรวจสอบสถานะออเดอร์อัตโนมัติ:\n• พิมพ์ เบอร์โทรศัพท์ ที่แจ้งไว้ตอนวัดตัว (เช่น 086-555-1234)\n• หรือพิมพ์ เลขที่ออเดอร์ (เช่น NU-26008)\n• หรือพิมพ์ ชื่อ-นามสกุล ของท่าน\n\nระบบจะประมวลผลข้อมูลและส่งลิงก์ติดตามงานให้ท่านตรวจสอบรายละเอียด สัดส่วนที่วัดตัว และความคืบหน้าของชุดได้ทันทีเลยค่ะ ✨`;
+          const digits = originalText.replace(/\D/g, "");
+          const isLikelySearch = digits.length >= 7 || /NU-?\d{3,6}/i.test(originalText) || originalText.length >= 2;
+
+          if (isLikelySearch && (digits.length >= 7 || /NU-?\d{3,6}/i.test(originalText))) {
+            replyMessage = formatOrderNotFoundMessage(originalText);
           } else {
             // Intelligent conversation / advice powered by Gemini AI
             try {
               replyMessage = await generateAiFashionReply(originalText);
             } catch (e) {
-              replyMessage = `สวัสดีค่ะคุณลูกค้า ⚜️ NUNUH Boutique ⚜️ ยินดีให้บริการค่ะ\n\nคุณลูกค้าสามารถสอบถามข้อมูลการสั่งตัดชุด หรือพิมพ์เบอร์โทรศัพท์/เลขที่ออเดอร์ เพื่อติดตามสถานะงานตัดเย็บได้ตลอด 24 ชม. เลยนะคะ ✨`;
+              replyMessage = `สวัสดีค่ะคุณลูกค้า ⚜️ NUNUH Boutique ⚜️ ยินดีให้บริการค่ะ\n\nคุณลูกค้าสามารถสอบถามข้อมูลการสั่งตัดชุด หรือพิมพ์เบอร์โทรศัพท์/ชื่อ/เลขที่ออเดอร์ เพื่อติดตามสถานะงานตัดเย็บได้ตลอด 24 ชม. เลยนะคะ ✨`;
             }
           }
-        } else if (matchedOrders.length === 1) {
-          const order = matchedOrders[0];
-          const stCfg = STATUS_MAP_TH[order.status] || { label: order.status, desc: "กำลังดำเนินการ" };
-
-          // Date display
-          let formattedDelivery = order.deliveryDate || "-";
-          try {
-            formattedDelivery = new Date(order.deliveryDate).toLocaleDateString('th-TH', {
-              day: 'numeric',
-              month: 'long',
-              year: 'numeric'
-            });
-          } catch (e) {}
-
-          const price = Number(order.price || 0);
-          const deposit = Number(order.deposit || 0);
-          const discount = Number(order.discount || 0);
-          const finalPaid = Number(order.finalPaymentAmount || 0);
-          const unpaid = Math.max(0, price - deposit - discount - finalPaid);
-
-          const lineUserIdParam = event.source?.userId ? `&lineUserId=${event.source.userId}` : '';
-          const portalUrl = `${baseAppUrl}/?mode=customer&search=${encodeURIComponent(order.customerPhone || order.orderNumber)}${lineUserIdParam}`;
-
-          replyMessage = `⚜️ อัปเดตสถานะชุดสั่งตัด NUNUH Boutique ⚜️\n\n` +
-            `👤 เรียนคุณ: ${order.customerName}${order.customerNickname ? ` (${order.customerNickname})` : ""}\n` +
-            `🧾 รหัสออเดอร์: ${order.orderNumber}\n` +
-            `👗 แบบชุด: ${order.dressType}\n` +
-            `🧵 ชนิดผ้า: ${order.fabricType || "ตามที่ระบุ"} (${order.fabricColor || "-"})\n\n` +
-            `📍 สถานะปัจจุบัน: [${stCfg.label}]\n` +
-            `ℹ️ รายละเอียด: "${stCfg.desc}"\n` +
-            `📅 วันที่อัปเดตสถานะ: ${order.statusDate || order.orderDate || "-"}\n` +
-            `⏳ กำหนดส่งมอบ: ${formattedDelivery}\n\n` +
-            `💰 ข้อมูลยอดเงิน:\n` +
-            `• ราคารวม: ${price.toLocaleString()} บาท\n` +
-            `• มัดจำแล้ว: ${deposit.toLocaleString()} บาท\n` +
-            (unpaid === 0 ? `• สถานะชำระ: ชำระครบถ้วนแล้ว ✓\n\n` : `• ยอดคงเหลือวันรับชุด: ${unpaid.toLocaleString()} บาท\n\n`) +
-            `🔗 ตรวจสอบรายละเอียด สัดส่วน และติดตามงานตัดเย็บด้วยตนเองได้ที่นี่ค่ะ:\n` +
-            `${portalUrl}\n\n` +
-            `หากท่านต้องการสอบถามข้อมูลเพิ่มเติม สามารถพิมพ์ข้อความทิ้งไว้ในแชทนี้ได้เลยนะคะ ✨`;
         } else {
-          // Multiple orders matched
-          let listText = "";
-          matchedOrders.slice(0, 5).forEach((order: any, idx: number) => {
-            const stCfg = STATUS_MAP_TH[order.status] || { label: order.status, desc: "" };
-            listText += `${idx + 1}. ออเดอร์ ${order.orderNumber} (${order.dressType})\n   📍 สถานะ: [${stCfg.label || order.status}]\n`;
-          });
-          
-          const lineUserIdParam = event.source?.userId ? `&lineUserId=${event.source.userId}` : '';
-          const portalUrl = `${baseAppUrl}/?mode=customer&search=${encodeURIComponent(matchedOrders[0].customerPhone || matchedOrders[0].orderNumber)}${lineUserIdParam}`;
-
-          replyMessage = `⚜️ พบรายการสั่งตัดของคุณทั้งหมด ${matchedOrders.length} ออเดอร์ค่ะ:\n\n${listText}\n` +
-            `🔗 เปิดดูรายละเอียด สัดส่วน และสถานะทุกออเดอร์ได้ที่ลิงก์นี้เลยค่ะ:\n` +
-            `${portalUrl}\n\n` +
-            `ขอบพระคุณที่ไว้วางใจ NUNUH Boutique ค่ะ 💖`;
+          // Format full report for ALL customer orders
+          replyMessage = formatCustomerOrdersReport(matchedOrders, baseAppUrl, event.source?.userId);
         }
 
         // Send Reply via LINE messaging API
         if (LINE_CHANNEL_ACCESS_TOKEN && replyToken) {
           try {
-            const response = await fetch("https://api.line.me/v2/bot/message/reply", {
+            const flexObj = matchedOrders.length > 0 ? buildOrdersLineFlexMessage(matchedOrders, baseAppUrl, event.source?.userId) : null;
+            
+            // Build payload: Send interactive Flex card(s) followed by full item breakdown text
+            const messagesPayload: any[] = [];
+            if (flexObj) {
+              messagesPayload.push(flexObj);
+            }
+            if (replyMessage) {
+              messagesPayload.push({
+                type: "text",
+                text: replyMessage
+              });
+            }
+
+            let response = await fetch("https://api.line.me/v2/bot/message/reply", {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
@@ -1404,20 +1493,32 @@ app.post(["/api/webhook/line", "/webhook/line", "/api/line/webhook", "/api/line-
               },
               body: JSON.stringify({
                 replyToken: replyToken,
-                messages: [
-                  {
-                    type: "text",
-                    text: replyMessage
-                  }
-                ]
+                messages: messagesPayload
               })
             });
+
+            // Resilient fallback: If combined Flex+Text payload fails (e.g. Flex schema nuance on older LINE versions), retry with pure text
+            if (!response.ok && flexObj) {
+              const flexErr = await response.text();
+              console.warn("⚠️ LINE reply with Flex failed, falling back to pure text message. Status:", response.status, "Error:", flexErr);
+              response = await fetch("https://api.line.me/v2/bot/message/reply", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  "Authorization": `Bearer ${LINE_CHANNEL_ACCESS_TOKEN}`
+                },
+                body: JSON.stringify({
+                  replyToken: replyToken,
+                  messages: [{ type: "text", text: replyMessage }]
+                })
+              });
+            }
 
             if (!response.ok) {
               const errBody = await response.text();
               console.error("❌ Failed to send LINE reply. HTTP status:", response.status, "Response:", errBody);
             } else {
-              console.log("✅ Send LINE reply successful!");
+              console.log(`✅ Send LINE reply successful for ${matchedOrders.length} order(s)!`);
             }
           } catch (err) {
             console.error("❌ Error sending LINE reply:", err);

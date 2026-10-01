@@ -289,6 +289,11 @@ export default function App() {
   const [isTestingPush, setIsTestingPush] = useState<boolean>(false);
   const [testPushResult, setTestPushResult] = useState<{ success: boolean; msg: string; tip?: string } | null>(null);
   const [copiedWebhook, setCopiedWebhook] = useState<boolean>(false);
+  const [isTestingWebhook, setIsTestingWebhook] = useState<boolean>(false);
+  const [webhookTestResult, setWebhookTestResult] = useState<{ success: boolean; msg: string; statusCode?: number; detail?: string } | null>(null);
+  const [isSyncingWebhook, setIsSyncingWebhook] = useState<boolean>(false);
+  const [syncWebhookResult, setSyncWebhookResult] = useState<{ success: boolean; msg: string } | null>(null);
+  const [registeredWebhookUrl, setRegisteredWebhookUrl] = useState<string>('');
   const [isTestingFirebase, setIsTestingFirebase] = useState<boolean>(false);
   const [firebaseTestResult, setFirebaseTestResult] = useState<{ success: boolean; latencyMs?: number; projectId?: string; message: string } | null>(null);
   const [isForceSyncingFirebase, setIsForceSyncingFirebase] = useState<boolean>(false);
@@ -339,8 +344,78 @@ export default function App() {
         const data = await res.json();
         setLineConfigStatus(data);
       }
+      const epRes = await fetch('/api/line/webhook-endpoint');
+      if (epRes.ok) {
+        const epData = await epRes.json();
+        if (epData && epData.endpoint) {
+          setRegisteredWebhookUrl(epData.endpoint);
+        }
+      }
     } catch (e) {
       console.warn('Could not fetch LINE config status:', e);
+    }
+  };
+
+  const handleTestWebhookConnection = async () => {
+    setIsTestingWebhook(true);
+    setWebhookTestResult(null);
+    try {
+      const res = await fetch('/api/line/test-webhook', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        setWebhookTestResult({
+          success: true,
+          msg: `✅ การเชื่อมต่อ Webhook จาก LINE สำเร็จ 100%! LINE ตอบกลับ HTTP 200 OK ระบบพร้อมตอบกลับแชทอัตโนมัติทันทีค่ะ 🎉`
+        });
+      } else {
+        setWebhookTestResult({
+          success: false,
+          statusCode: data.statusCode,
+          detail: data.detail || data.reason,
+          msg: `⚠️ LINE รายงานสถานะ HTTP ${data.statusCode || 'N/A'}: ${data.reason || data.detail || 'ไม่สามารถติดต่อ Webhook URL ได้'}`
+        });
+      }
+    } catch (err: any) {
+      setWebhookTestResult({
+        success: false,
+        msg: `การทดสอบ Webhook ขัดข้อง: ${err.message || err}`
+      });
+    } finally {
+      setIsTestingWebhook(false);
+    }
+  };
+
+  const handleAutoSyncWebhookToLine = async (targetUrl?: string) => {
+    const urlToRegister = targetUrl || lineConfigStatus?.webhookUrl || `${window.location.origin}/api/webhook/line`;
+    setIsSyncingWebhook(true);
+    setSyncWebhookResult(null);
+    try {
+      const res = await fetch('/api/line/set-webhook-endpoint', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ endpoint: urlToRegister })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setSyncWebhookResult({
+          success: true,
+          msg: `🎉 บันทึก Webhook URL เข้าสู่ LINE Developers Console สำเร็จเรียบร้อยแล้วค่ะ! (${urlToRegister})`
+        });
+        setRegisteredWebhookUrl(urlToRegister);
+        fetchLineConfigStatus();
+      } else {
+        setSyncWebhookResult({
+          success: false,
+          msg: `ไม่สามารถบันทึกไปยัง LINE ได้: ${data.error || 'เกิดข้อผิดพลาด'}`
+        });
+      }
+    } catch (err: any) {
+      setSyncWebhookResult({
+        success: false,
+        msg: `เกิดข้อผิดพลาดในการบันทึก: ${err.message || err}`
+      });
+    } finally {
+      setIsSyncingWebhook(false);
     }
   };
 
@@ -514,7 +589,7 @@ export default function App() {
 
   // Save selected theme to localStorage when changed
   useEffect(() => {
-    localStorage.setItem('nunuh_selected_theme', theme);
+    safeSetLocalStorage('nunuh_selected_theme', theme);
     // Sync to server
     fetch('/api/settings', {
       method: 'POST',
@@ -589,7 +664,7 @@ export default function App() {
 
       const allDeleted = Array.from(new Set([...localDeleted, ...serverDeleted, ...firestoreDeleted]));
       if (allDeleted.length > localDeleted.length) {
-        localStorage.setItem('nunuh_deleted_order_ids', JSON.stringify(allDeleted));
+        safeSetLocalStorage('nunuh_deleted_order_ids', allDeleted);
       }
       const deletedSet = new Set(allDeleted);
 
@@ -639,26 +714,9 @@ export default function App() {
 
       let combined: Order[] = [];
       if (hasRemoteData) {
-        const remoteIds = new Set(remoteOrders.map(o => o.id));
-        const now = Date.now();
-
-        // เก็บออเดอร์ในเครื่องไว้เฉพาะออเดอร์ที่เพิ่งสร้างใหม่สดๆ ภายใน 60 วินาทีที่ยังซิงค์ไม่เสร็จ
-        const pendingLocal = currentLocal.filter(o => {
-          if (!o || !o.id || deletedSet.has(o.id)) return false;
-          if (remoteIds.has(o.id)) return false;
-          return o.updatedAt && (now - o.updatedAt < 60000);
-        });
-
-        // ออเดอร์ในเครื่องที่เก่าเกิน 60 วินาทีและไม่มีอยู่บนเซิร์ฟเวอร์/Firestore คือออเดอร์ที่ถูกลบไปแล้วจากเครื่องอื่น
-        const deadLocalOrders = currentLocal.filter(o => o && o.id && !remoteIds.has(o.id) && (!o.updatedAt || (now - o.updatedAt >= 60000)));
-        if (deadLocalOrders.length > 0) {
-          const deadIds = deadLocalOrders.map(o => o.id);
-          const updatedDeleted = Array.from(new Set([...allDeleted, ...deadIds]));
-          localStorage.setItem('nunuh_deleted_order_ids', JSON.stringify(updatedDeleted));
-          recordDeletedOrderIdsInFirestore(deadIds).catch(() => {});
-        }
-
-        combined = mergeOrders(remoteOrders, pendingLocal);
+        // ผสานข้อมูลจาก Remote (Server + Firestore) กับข้อมูลในเครื่องอย่างปลอดภัย
+        // ห้ามลบออเดอร์ในเครื่องเด็ดขาด ยกเว้นรายการที่อยู่ใน deletedSet (ผู้ใช้กดลบจริงเท่านั้น)
+        combined = mergeOrders(remoteOrders, currentLocal).filter(o => o && o.id && !deletedSet.has(o.id));
       } else {
         // กรณีออฟไลน์สนิท (ไม่สามารถเชื่อมต่อ Server หรือ Firestore ได้)
         combined = currentLocal.filter(o => o && o.id && !deletedSet.has(o.id));
@@ -994,7 +1052,7 @@ export default function App() {
     // ตรวจสอบพารามิเตอร์ URL เพื่อกำหนดโหมดการใช้งาน
     // สำหรับเจ้าของแอป (ลิงก์หลักแบบปกติ): จะเข้าสู่หน้าแรก "ติดตามงาน / Home" (tracker) เสมอทุกครั้งที่เปิดแอป
     if (modeParam === 'staff' || roleParam === 'staff') {
-      localStorage.setItem('nunuh_user_mode', 'staff');
+      safeSetLocalStorage('nunuh_user_mode', 'staff');
       setIsStaffMode(true);
       setIsCustomerMode(false);
       if (tabParam && ['tracker', 'orderForm', 'catalogue'].includes(tabParam)) {
@@ -1003,13 +1061,13 @@ export default function App() {
         setActiveTab('orderForm');
       }
     } else if (modeParam === 'customer') {
-      localStorage.setItem('nunuh_user_mode', 'customer');
+      safeSetLocalStorage('nunuh_user_mode', 'customer');
       setIsCustomerMode(true);
       setIsStaffMode(false);
       setActiveTab('customer');
     } else {
       // โหมดเจ้าของแอปหลัก: แสดงหน้าแรก "ติดตามงาน (Tracker Dashboard)" เสมอทุกครั้งเมื่อเข้าใช้
-      localStorage.removeItem('nunuh_user_mode');
+      safeRemoveLocalStorage('nunuh_user_mode');
       setIsStaffMode(false);
       setIsCustomerMode(false);
       setActiveTab('tracker');
@@ -1062,7 +1120,7 @@ export default function App() {
               try { localDeleted = JSON.parse(deletedIdsStr); } catch (e) {}
 
               const combinedDeleted = Array.from(new Set([...localDeleted, ...serverDeletedIds]));
-              localStorage.setItem('nunuh_deleted_order_ids', JSON.stringify(combinedDeleted));
+              safeSetLocalStorage('nunuh_deleted_order_ids', combinedDeleted);
               const deletedSet = new Set(combinedDeleted);
 
               if (serverDeletedIds.length > 0) {
@@ -1080,25 +1138,25 @@ export default function App() {
               }
             } else if (payload.type === 'catalogue_updated' && Array.isArray(payload.data)) {
               setCatalogue(payload.data);
-              localStorage.setItem('nunuh_catalogue', JSON.stringify(payload.data));
+              safeSetLocalStorage('nunuh_catalogue', payload.data);
             } else if (payload.type === 'reviews_updated' && Array.isArray(payload.data)) {
               setReviews(payload.data);
-              localStorage.setItem('nunuh_reviews', JSON.stringify(payload.data));
+              safeSetLocalStorage('nunuh_reviews', payload.data);
             } else if (payload.type === 'staff_updated' && Array.isArray(payload.data)) {
               setActiveStaffList(payload.data);
-              localStorage.setItem('nunuh_active_staff_list', JSON.stringify(payload.data));
+              safeSetLocalStorage('nunuh_active_staff_list', payload.data);
             } else if (payload.type === 'settings_updated' && payload.data) {
               if (payload.data.boutiquePhone) {
                 setBoutiquePhone(payload.data.boutiquePhone);
-                localStorage.setItem('nunuh_boutique_phone', payload.data.boutiquePhone);
+                safeSetLocalStorage('nunuh_boutique_phone', payload.data.boutiquePhone);
               }
               if (payload.data.boutiqueLogo !== undefined) {
                 setBoutiqueLogo(payload.data.boutiqueLogo);
-                localStorage.setItem('nunuh_boutique_logo', payload.data.boutiqueLogo);
+                safeSetLocalStorage('nunuh_boutique_logo', payload.data.boutiqueLogo);
               }
               if (payload.data.theme) {
                 setTheme(payload.data.theme);
-                localStorage.setItem('nunuh_selected_theme', payload.data.theme);
+                safeSetLocalStorage('nunuh_selected_theme', payload.data.theme);
               }
             }
           } catch (e) {}
@@ -1127,11 +1185,11 @@ export default function App() {
             try { deletedIds = JSON.parse(deletedIdsStr); } catch (e) {}
             if (!deletedIds.includes(deletedId)) {
               deletedIds.push(deletedId);
-              localStorage.setItem('nunuh_deleted_order_ids', JSON.stringify(deletedIds));
+              safeSetLocalStorage('nunuh_deleted_order_ids', deletedIds);
             }
             setOrders(prev => {
               const filtered = prev.filter(o => o.id !== deletedId);
-              localStorage.setItem('nunuh_orders', JSON.stringify(filtered));
+              safeSetLocalStorage('nunuh_orders', filtered);
               return filtered;
             });
           } else if (event.data.type === 'ORDERS_UPDATE' && Array.isArray(event.data.orders)) {
@@ -1256,7 +1314,7 @@ export default function App() {
         }
       }
       if (changedDeleted) {
-        localStorage.setItem('nunuh_deleted_order_ids', JSON.stringify(deletedIds));
+        safeSetLocalStorage('nunuh_deleted_order_ids', deletedIds);
       }
       const deletedSet = new Set(deletedIds);
 
@@ -1372,7 +1430,7 @@ export default function App() {
       try { deletedIds = JSON.parse(deletedIdsStr); } catch (e) {}
       if (deletedId && !deletedIds.includes(deletedId)) {
         deletedIds.push(deletedId);
-        localStorage.setItem('nunuh_deleted_order_ids', JSON.stringify(deletedIds));
+        safeSetLocalStorage('nunuh_deleted_order_ids', deletedIds);
       }
       const deletedSet = new Set(deletedIds);
 
@@ -1430,8 +1488,19 @@ export default function App() {
           updatedBy: currentStaff?.name || newOrder.staffName || 'พนักงาน'
         }];
 
+    // ตรวจสอบและผูก LINE User ID อัตโนมัติจากประวัติออเดอร์เดิมของเบอร์โทรศัพท์เดียวกัน
+    let customerLineUserId = newOrder.lineUserId || '';
+    if (!customerLineUserId && newOrder.customerPhone) {
+      const cleanPhone = newOrder.customerPhone.replace(/\D/g, '');
+      const prevOrder = orders.find(o => o.lineUserId && o.customerPhone && o.customerPhone.replace(/\D/g, '') === cleanPhone);
+      if (prevOrder?.lineUserId) {
+        customerLineUserId = prevOrder.lineUserId;
+      }
+    }
+
     const orderWithTime: Order = { 
       ...newOrder, 
+      lineUserId: customerLineUserId || undefined,
       status: initialStatus,
       statusDate: todayStr,
       statusHistory: initialHistory,
@@ -1441,18 +1510,45 @@ export default function App() {
       updatedAt: Date.now() 
     };
 
-    // บันทึกตรงเข้า Firestore ทันทีเป็นอันดับแรกเพื่อให้ระบบหลักและทุกเครื่องเห็นทันที
+    // 1. บันทึกตรงเข้า Firestore ทันทีเป็นอันดับแรก
     saveOrderToFirestore(orderWithTime).catch((err) => {
       console.warn("Direct Firestore save error:", err);
     });
 
-    const updated = [orderWithTime, ...orders];
+    // 2. ส่งตรงเข้า Backend Server ทันทีพร้อมยิง SSE ให้ทุกเครื่องที่เปิดอยู่เห็นทันที
+    const publicUrl = localStorage.getItem('nunuh_public_url') || window.location.origin;
+    fetch('/api/orders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orders: [orderWithTime], publicUrl })
+    }).catch((err) => {
+      console.warn("Server push error:", err);
+    });
+
+    // 3. ส่งการแจ้งเตือนทาง LINE ให้ลูกค้าและเจ้าของร้านทันที
+    fetch('/api/notify-order-created', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ order: orderWithTime })
+    }).catch((err) => {
+      console.warn("LINE notification error:", err);
+    });
+
+    // 4. บันทึกลง Storage และส่ง BroadcastChannel ในเครื่อง
+    const updated = [orderWithTime, ...orders.filter(o => o.id !== orderWithTime.id)];
     saveOrdersToStorage(updated);
-    // หลังบันทึกย้ายแท็บไปหน้าติดตามงาน (หากเป็นพนักงานให้คงอยู่ที่เดิมเพื่อความปลอดภัย)
+
+    try {
+      const channel = new BroadcastChannel('nunuh_multiuser_sync_channel');
+      channel.postMessage({ type: 'ORDERS_UPDATE', orders: updated });
+      channel.close();
+    } catch (e) {}
+
+    // หลังบันทึกย้ายแท็บไปหน้าติดตามงาน (หากเป็นพนักงานให้คงอยู่ที่เดิมเพื่อความสะดวกในการรับออเดอร์ถัดไป)
     if (isStaffMode) {
       setActiveTab('orderForm');
       try {
-        alert(`บันทึกออเดอร์ใหม่ของคุณ ${newOrder.customerName} เรียบร้อยแล้วค่ะ! ✨`);
+        alert(`บันทึกออเดอร์ใหม่ของคุณ ${newOrder.customerName} เรียบร้อยแล้วค่ะ! ✨ ข้อมูลถูกส่งเข้าสู่ระบบหลักและแจ้งเตือนเรียบร้อย`);
       } catch (e) {}
     } else {
       setActiveTab('tracker');
@@ -1517,14 +1613,14 @@ export default function App() {
     } catch (e) {}
     if (!deletedIds.includes(orderId)) {
       deletedIds.push(orderId);
-      localStorage.setItem('nunuh_deleted_order_ids', JSON.stringify(deletedIds));
+      safeSetLocalStorage('nunuh_deleted_order_ids', deletedIds);
     }
     recordDeletedOrderIdsInFirestore([orderId]).catch(() => {});
 
     // 2. ปรับปรุงสถานะ Local และเซฟแบบคลีนทันที
     const updated = orders.filter(o => o.id !== orderId);
     setOrders(updated);
-    localStorage.setItem('nunuh_orders', JSON.stringify(updated));
+    safeSetLocalStorage('nunuh_orders', updated);
 
     // 3. ส่งสัญญาณ BroadcastChannel ไปยังแท็บอื่นในเบราว์เซอร์เดียวกันทันที
     try {
@@ -1648,7 +1744,7 @@ export default function App() {
   const handleAddCatalogueItem = async (newItem: CatalogueItem) => {
     const updated = [...catalogue, newItem];
     setCatalogue(updated);
-    localStorage.setItem('nunuh_catalogue', JSON.stringify(updated));
+    safeSetLocalStorage('nunuh_catalogue', updated);
     try {
       await fetch('/api/catalogue', {
         method: 'POST',
@@ -1664,7 +1760,7 @@ export default function App() {
   const handleDeleteCatalogueItem = async (designId: string) => {
     const updated = catalogue.filter(item => item.id !== designId);
     setCatalogue(updated);
-    localStorage.setItem('nunuh_catalogue', JSON.stringify(updated));
+    safeSetLocalStorage('nunuh_catalogue', updated);
     try {
       await fetch('/api/catalogue', {
         method: 'POST',
@@ -1680,7 +1776,7 @@ export default function App() {
   const handleUpdateCatalogueItem = async (updatedItem: CatalogueItem) => {
     const updated = catalogue.map(item => item.id === updatedItem.id ? updatedItem : item);
     setCatalogue(updated);
-    localStorage.setItem('nunuh_catalogue', JSON.stringify(updated));
+    safeSetLocalStorage('nunuh_catalogue', updated);
     try {
       await fetch('/api/catalogue', {
         method: 'POST',
@@ -1696,7 +1792,7 @@ export default function App() {
   const handleAddReview = async (newReview: CustomerReview) => {
     const updated = [newReview, ...reviews];
     setReviews(updated);
-    localStorage.setItem('nunuh_reviews', JSON.stringify(updated));
+    safeSetLocalStorage('nunuh_reviews', updated);
     try {
       await fetch('/api/reviews', {
         method: 'POST',
@@ -1711,7 +1807,7 @@ export default function App() {
   const handleUpdateReview = async (updatedReview: CustomerReview) => {
     const updated = reviews.map(r => r.id === updatedReview.id ? updatedReview : r);
     setReviews(updated);
-    localStorage.setItem('nunuh_reviews', JSON.stringify(updated));
+    safeSetLocalStorage('nunuh_reviews', updated);
     try {
       await fetch('/api/reviews', {
         method: 'POST',
@@ -1726,7 +1822,7 @@ export default function App() {
   const handleDeleteReview = async (id: string) => {
     const updated = reviews.filter(r => r.id !== id);
     setReviews(updated);
-    localStorage.setItem('nunuh_reviews', JSON.stringify(updated));
+    safeSetLocalStorage('nunuh_reviews', updated);
     try {
       await fetch('/api/reviews', {
         method: 'POST',
@@ -2819,6 +2915,77 @@ export default function App() {
                             <span>{copiedWebhook ? 'คัดลอกแล้ว!' : 'คัดลอก'}</span>
                           </button>
                         </div>
+
+                        {registeredWebhookUrl && (
+                          <div className="text-[11px] bg-white/80 p-2 rounded-xl border border-natural-wheat/50 flex flex-col gap-1 text-natural-espresso/80">
+                            <div className="flex items-center justify-between font-semibold">
+                              <span>🌐 Webhook Endpoint ที่บันทึกไว้ใน LINE Console:</span>
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                registeredWebhookUrl === (lineConfigStatus?.webhookUrl || `${window.location.origin}/api/webhook/line`)
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : 'bg-amber-100 text-amber-800'
+                              }`}>
+                                {registeredWebhookUrl === (lineConfigStatus?.webhookUrl || `${window.location.origin}/api/webhook/line`)
+                                  ? 'ตรงกับระบบปัจจุบัน ✓'
+                                  : 'ยังไม่ตรงกับระบบปัจจุบัน'}
+                              </span>
+                            </div>
+                            <span className="font-mono text-[10.5px] text-emerald-900 break-all">{registeredWebhookUrl}</span>
+                          </div>
+                        )}
+
+                        <div className="flex flex-wrap items-center gap-2 pt-1">
+                          <button
+                            type="button"
+                            disabled={isTestingWebhook}
+                            onClick={handleTestWebhookConnection}
+                            className="px-3 py-1.5 bg-sky-700 hover:bg-sky-800 disabled:bg-sky-400 text-white font-bold text-xs rounded-xl shadow-xs transition-all cursor-pointer flex items-center gap-1"
+                          >
+                            {isTestingWebhook ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <span>🧪</span>}
+                            <span>{isTestingWebhook ? 'กำลังทดสอบ...' : 'ทดสอบ Webhook กับ LINE'}</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            disabled={isSyncingWebhook}
+                            onClick={() => handleAutoSyncWebhookToLine()}
+                            className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 disabled:bg-emerald-400 text-white font-bold text-xs rounded-xl shadow-xs transition-all cursor-pointer flex items-center gap-1"
+                          >
+                            {isSyncingWebhook ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                            <span>{isSyncingWebhook ? 'กำลังบันทึก...' : 'ซิงค์ URL ไปยัง LINE อัตโนมัติ'}</span>
+                          </button>
+                        </div>
+
+                        {webhookTestResult && (
+                          <div className={`p-2.5 rounded-xl text-xs ${
+                            webhookTestResult.success ? 'bg-emerald-100 text-emerald-950 border border-emerald-300' : 'bg-rose-100 text-rose-950 border border-rose-300'
+                          }`}>
+                            <p className="font-bold">{webhookTestResult.msg}</p>
+                            {webhookTestResult.detail && (
+                              <p className="text-[10.5px] mt-0.5 opacity-80 font-mono">รายละเอียด: {webhookTestResult.detail}</p>
+                            )}
+                          </div>
+                        )}
+
+                        {syncWebhookResult && (
+                          <div className={`p-2.5 rounded-xl text-xs ${
+                            syncWebhookResult.success ? 'bg-emerald-100 text-emerald-950 border border-emerald-300' : 'bg-rose-100 text-rose-950 border border-rose-300'
+                          }`}>
+                            <p className="font-bold">{syncWebhookResult.msg}</p>
+                          </div>
+                        )}
+
+                        {/* Real-time LINE OA Assistant Explanation Banner */}
+                        <div className="bg-emerald-50/70 p-2.5 rounded-xl border border-emerald-200 text-[11px] text-emerald-950 space-y-1">
+                          <p className="font-bold flex items-center gap-1 text-emerald-900">
+                            <span>⚡</span>
+                            <span>การแจ้งเตือน Real-Time ใน LINE OA เมื่อลูกค้าส่งข้อความ:</span>
+                          </p>
+                          <p className="leading-relaxed opacity-90">
+                            เมื่อลูกค้าพิมพ์ <strong>เบอร์โทรศัพท์</strong> (เช่น 0801462230) หรือ <strong>ชื่อ</strong> (เช่น ซารอฟะห์) ในแชทไลน์ OA ของร้าน ระบบจะดึงรายการออเดอร์ทั้งหมดของลูกค้ารายนั้น ส่งตอบกลับทันทีเป็น <strong>การ์ด Flex Message และรายงานสรุปครบทุกชุด</strong> ทั้งสถานะตัดเย็บ สัดส่วน วันนัดรับ และยอดเงินค่ะ
+                          </p>
+                        </div>
+
                         <p className="text-[10px] text-natural-espresso/60 leading-tight">
                           * นำ URL นี้ไปวางใน Messaging API &gt; Webhook URL บน <a href="https://developers.line.biz/" target="_blank" rel="noopener noreferrer" className="text-emerald-700 underline font-bold inline-flex items-center gap-0.5">LINE Developers <ExternalLink className="h-2.5 w-2.5" /></a> และกดเปิด <strong>"Use webhook"</strong>
                         </p>

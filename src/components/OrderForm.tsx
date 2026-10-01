@@ -1235,7 +1235,14 @@ export default function OrderForm({
                       {pastCustomerOrders.map((past) => {
                         const m = past.measurements;
                         const feedbacks = past.feedbacks || [];
-                        const statusInfo = STATUS_MAP[past.status];
+                        const statusInfo = STATUS_MAP[past.status] || {
+                          label: past.status || 'รอดำเนินการ',
+                          description: past.status || 'รอดำเนินการ',
+                          colorClass: 'bg-indigo-50 text-indigo-900 border-indigo-300',
+                          bgBorderClass: 'border-indigo-300 bg-indigo-50/40',
+                          textColor: 'text-indigo-900',
+                          icon: 'Scissors'
+                        };
                         return (
                           <div key={past.id} className="bg-white p-2.5 rounded-lg border border-amber-200/30 shadow-3xs space-y-2">
                             <div className="flex items-center justify-between text-[10px] gap-2">
