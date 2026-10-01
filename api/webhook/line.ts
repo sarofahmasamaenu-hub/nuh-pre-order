@@ -1,11 +1,6 @@
-import type { IncomingMessage, ServerResponse } from "http";
 import crypto from "crypto";
 import fs from "fs";
 import path from "path";
-import { getDbModule } from "../_db_helper";
-import { initializeApp, getApps, getApp } from "firebase/app";
-import { getFirestore, collection, getDocs, doc, setDoc } from "firebase/firestore";
-import { firebaseConfig } from "../../src/firebase";
 import {
   smartMatchOrders,
   cleanCustomerQuery,
@@ -17,8 +12,48 @@ import {
   STATUS_MAP_TH
 } from "../../src/utils/lineMatcher";
 
+// Helper to fetch live orders from Firestore REST API without heavy SDKs
+async function fetchOrdersFromFirestore(): Promise<any[]> {
+  try {
+    const res = await fetch("https://firestore.googleapis.com/v1/projects/nuhpre-order/databases/(default)/documents/orders");
+    if (!res.ok) return [];
+    const data = await res.json();
+    const parseFields = (fields: any): any => {
+      const resObj: any = {};
+      for (const [k, v] of Object.entries(fields || {})) {
+        const valObj = v as any;
+        if ("stringValue" in valObj) resObj[k] = valObj.stringValue;
+        else if ("integerValue" in valObj) resObj[k] = parseInt(valObj.integerValue, 10);
+        else if ("doubleValue" in valObj) resObj[k] = parseFloat(valObj.doubleValue);
+        else if ("booleanValue" in valObj) resObj[k] = valObj.booleanValue;
+        else if ("arrayValue" in valObj) resObj[k] = (valObj.arrayValue.values || []).map((x: any) => Object.values(x)[0]);
+        else if ("mapValue" in valObj) resObj[k] = parseFields(valObj.mapValue.fields);
+      }
+      return resObj;
+    };
+    return (data.documents || []).map((doc: any) => ({
+      id: doc.name.split("/").pop(),
+      ...parseFields(doc.fields)
+    }));
+  } catch (e) {
+    console.warn("[Vercel Webhook] Firestore fetch failed:", e);
+    return [];
+  }
+}
+
+// Fallback to read orders from local file
+function readOrdersFromFile(): any[] {
+  try {
+    const p = path.join(process.cwd(), "orders.json");
+    if (fs.existsSync(p)) {
+      return JSON.parse(fs.readFileSync(p, "utf8"));
+    }
+  } catch (e) {}
+  return [];
+}
+
 export default async function handler(req: any, res: any) {
-  // Allow CORS
+  // CORS Headers
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, x-line-signature");
@@ -27,15 +62,11 @@ export default async function handler(req: any, res: any) {
     return res.status(200).end();
   }
 
-  // GET route for testing / health check
+  // GET route for LINE verification or uptime check
   if (req.method === "GET") {
-    const db = await getDbModule();
     return res.status(200).json({
       status: "ok",
-      message: "LINE Webhook endpoint is active and ready for Messaging API events.",
-      hasToken: Boolean(process.env.LINE_CHANNEL_ACCESS_TOKEN),
-      hasSecret: Boolean(process.env.LINE_CHANNEL_SECRET),
-      hasDb: db.isPostgresActive(),
+      message: "NUNUH LINE Webhook endpoint is active and ready.",
       timestamp: new Date().toISOString()
     });
   }
@@ -45,215 +76,122 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    const db = await getDbModule();
+    const LINE_CHANNEL_ACCESS_TOKEN = (process.env.LINE_CHANNEL_ACCESS_TOKEN || "").trim();
+    const LINE_CHANNEL_SECRET = (process.env.LINE_CHANNEL_SECRET || "").trim();
 
-    // Fetch settings to check tokens
-    let settings: any = {};
-    try {
-      settings = await db.getSettingsFromDb();
-    } catch (e) {}
-
-    const LINE_CHANNEL_ACCESS_TOKEN = (process.env.LINE_CHANNEL_ACCESS_TOKEN || settings.lineChannelAccessToken || "").trim();
-    const LINE_CHANNEL_SECRET = (process.env.LINE_CHANNEL_SECRET || settings.lineChannelSecret || "").trim();
-
-    // Verify LINE signature if secret is present
+    // Verify LINE signature if secret and signature present
     const signature = req.headers["x-line-signature"];
-    const body = req.body;
+    const body = req.body || {};
     const bodyString = typeof body === "string" ? body : JSON.stringify(body);
 
     if (LINE_CHANNEL_SECRET && signature && bodyString) {
-      const hash = crypto
-        .createHmac("SHA256", LINE_CHANNEL_SECRET)
-        .update(bodyString)
-        .digest("base64");
-      if (hash !== signature) {
-        console.warn("[Vercel LINE Webhook] Signature verification mismatch warning");
-      }
+      try {
+        const hash = crypto
+          .createHmac("SHA256", LINE_CHANNEL_SECRET)
+          .update(bodyString)
+          .digest("base64");
+        if (hash !== signature) {
+          console.warn("[Vercel LINE Webhook] Signature mismatch warning");
+        }
+      } catch (e) {}
     }
 
-    // Determine public URL for customer portal
+    // LINE Webhook Verification test (empty events array or no events)
+    const events = (typeof body === "object" && Array.isArray(body.events)) ? body.events : [];
+    if (events.length === 0) {
+      return res.status(200).json({
+        success: true,
+        message: "Webhook verification verified successfully by LINE platform."
+      });
+    }
+
+    // Determine public URL
     const host = req.headers["x-forwarded-host"] || req.headers.host || "to-do-list-two-lovat.vercel.app";
     const proto = req.headers["x-forwarded-proto"] || "https";
-    const configuredUrl = (settings.publicUrl || "").trim();
-    const baseAppUrl = configuredUrl || `${proto}://${host}`;
+    const baseAppUrl = `${proto}://${host}`.replace(/\/+$/, "");
 
-    // Read live orders from Firebase Firestore first
-    let allOrders: any[] = [];
-    let fsDbInstance: any = null;
-    try {
-      const fbApp = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
-      fsDbInstance = getFirestore(fbApp);
-      const snap = await getDocs(collection(fsDbInstance, "orders"));
-      if (!snap.empty) {
-        snap.forEach((d) => {
-          const docData = d.data();
-          allOrders.push({ ...docData, id: docData.id || d.id });
-        });
-        console.log(`[LINE Webhook] Loaded ${allOrders.length} live orders from Firebase Firestore.`);
-      }
-    } catch (fsErr) {
-      console.warn("[LINE Webhook] Firestore fetch warning:", fsErr);
+    // Load orders
+    let allOrders = await fetchOrdersFromFirestore();
+    if (!allOrders || allOrders.length === 0) {
+      allOrders = readOrdersFromFile();
     }
 
-    // Fallback to PostgreSQL if Firestore had no orders
-    if (allOrders.length === 0 && db.isPostgresActive()) {
-      try {
-        await db.initDb().catch(() => {});
-        allOrders = await db.getOrdersFromDb();
-      } catch (dbErr) {
-        console.error("[LINE Webhook] Database query error:", dbErr);
-      }
-    }
-
-    // Fallback to orders.json if still empty
-    if (allOrders.length === 0) {
-      try {
-        const localPath = path.join(process.cwd(), "orders.json");
-        if (fs.existsSync(localPath)) {
-          const raw = fs.readFileSync(localPath, "utf-8");
-          allOrders = JSON.parse(raw);
-        }
-      } catch (fsErr) {}
-    }
-
-    const events = (req.body && req.body.events) || [];
-
-    // Process each incoming event
+    // Process events
     for (const event of events) {
       if (event.type === "message" && event.message?.type === "text") {
         const replyToken = event.replyToken;
         const originalText = (event.message.text || "").trim();
-        const userId = event.source?.userId || "";
+        const userId = event.source?.userId;
 
-        console.log(`[LINE Webhook] Received message: "${originalText}" from userId: "${userId}"`);
+        console.log(`[Vercel Webhook] Received user message: "${originalText}" from userId: ${userId}`);
 
-        // Smart match against all orders
+        // Match orders
         const matchedOrders = smartMatchOrders(originalText, allOrders, userId);
 
-        // Auto-link lineUserId in Firestore and database
-        if (matchedOrders.length > 0 && userId) {
-          for (const mo of matchedOrders) {
-            if (mo.id && mo.lineUserId !== userId) {
-              mo.lineUserId = userId;
-              mo.updatedAt = Date.now();
-              if (fsDbInstance) {
-                setDoc(doc(fsDbInstance, "orders", mo.id), { lineUserId: userId, updatedAt: Date.now() }, { merge: true }).catch(() => {});
-              }
-              if (db.isPostgresActive()) {
-                db.saveOrderToDb(mo).catch(() => {});
-              }
-            }
-          }
-        }
-
         let replyMessage = "";
+        let flexObj: any = null;
 
-        if (matchedOrders.length > 0) {
-          replyMessage = formatCustomerOrdersReport(matchedOrders, baseAppUrl, userId);
-        } else {
-          // No order found or customer greeting
-          const stripped = cleanCustomerQuery(originalText);
+        if (matchedOrders.length === 0) {
           const digits = originalText.replace(/\D/g, "");
-          const isSearchAttempt = digits.length >= 7 || /NU-?\d{3,6}/i.test(originalText) || stripped.length >= 2;
-
-          if (isSearchAttempt && (digits.length >= 7 || /NU-?\d{3,6}/i.test(originalText))) {
+          const isLikelySearch = digits.length >= 7 || /NU-?\d{3,6}/i.test(originalText);
+          if (isLikelySearch) {
             replyMessage = formatOrderNotFoundMessage(originalText);
-          } else if (process.env.GEMINI_API_KEY) {
-            // Use Gemini AI for natural fashion concierge conversation
-            try {
-              const geminiRes = await fetch(
-                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
-                {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    contents: [{ parts: [{ text: originalText }] }],
-                    systemInstruction: {
-                      parts: [
-                        {
-                          text: `คุณคือผู้ช่วย AI ประจำห้องเสื้อ NUNUH Boutique (ร้านตัดเย็บเสื้อผ้าสตรี ชุดเดรส ชุดราตรี ชุดเจ้าสาว ชุดลูกไม้).
-ตอบลูกค้าอย่างสุภาพ อ่อนหวาน ลงท้ายด้วยค่ะ/นะคะ สั้นกระชับ 2-3 ย่อหน้า ใช้ emoji ⚜️✨👗
-แจ้งลูกค้าว่าสามารถพิมพ์ "เบอร์โทรศัพท์" หรือ "เลขที่ออเดอร์" หรือ "ชื่อลูกค้า" เพื่อเช็คสถานะชุดสั่งตัด สัดส่วน และกำหนดส่งมอบได้ทันทีตลอด 24 ชั่วโมงค่ะ`
-                        }
-                      ]
-                    }
-                  })
-                }
-              );
-
-              if (geminiRes.ok) {
-                const geminiData = await geminiRes.json();
-                const candidateText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text;
-                if (candidateText) {
-                  replyMessage = candidateText.trim();
-                }
-              }
-            } catch (e) {
-              console.error("[LINE Webhook] Gemini AI error:", e);
-            }
+          } else {
+            replyMessage = `สวัสดีค่ะคุณลูกค้า ⚜️ NUNUH Boutique ⚜️ ยินดีให้บริการค่ะ\n\nคุณลูกค้าสามารถพิมพ์เบอร์โทรศัพท์ (เช่น 0801462230) หรือชื่อ เพื่อติดตามสถานะออเดอร์งานตัดเย็บทั้งหมดได้ทันทีนะคะ ✨`;
           }
-
-          if (!replyMessage) {
-            replyMessage =
-              `สวัสดีค่ะคุณลูกค้า ⚜️ NUNUH Boutique ⚜️ ยินดีให้บริการค่ะ\n\n` +
-              `คุณลูกค้าสามารถสอบถามข้อมูลการสั่งตัดชุด หรือพิมพ์ "เบอร์โทรศัพท์", "ชื่อ", หรือ "เลขที่ออเดอร์" เพื่อติดตามสถานะงานตัดเย็บได้ตลอด 24 ชม. เลยนะคะ ✨`;
+        } else {
+          // Format orders report & flex message
+          replyMessage = formatCustomerOrdersReport(matchedOrders, baseAppUrl, userId);
+          try {
+            flexObj = buildOrdersLineFlexMessage(matchedOrders, baseAppUrl, userId);
+          } catch (e) {
+            console.warn("Error building flex message:", e);
           }
         }
 
-        // Send reply to LINE Messaging API
+        // Send reply to customer via LINE API
         if (LINE_CHANNEL_ACCESS_TOKEN && replyToken) {
-          try {
-            const flexObj = matchedOrders.length > 0 ? buildOrdersLineFlexMessage(matchedOrders, baseAppUrl, userId) : null;
-            const messagesPayload: any[] = [];
-            if (flexObj) {
-              messagesPayload.push(flexObj);
-            }
-            if (replyMessage) {
-              messagesPayload.push({ type: "text", text: replyMessage });
-            }
+          const messagesPayload: any[] = [];
+          if (flexObj) {
+            messagesPayload.push(flexObj);
+          }
+          if (replyMessage) {
+            messagesPayload.push({
+              type: "text",
+              text: replyMessage
+            });
+          }
 
-            let replyRes = await fetch("https://api.line.me/v2/bot/message/reply", {
+          try {
+            const lineReplyRes = await fetch("https://api.line.me/v2/bot/message/reply", {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
-                "Authorization": `Bearer ${LINE_CHANNEL_ACCESS_TOKEN}`
+                Authorization: `Bearer ${LINE_CHANNEL_ACCESS_TOKEN}`
               },
               body: JSON.stringify({
-                replyToken: replyToken,
-                messages: messagesPayload
+                replyToken,
+                messages: messagesPayload.slice(0, 5) // LINE allows up to 5 messages per reply
               })
             });
 
-            // Resilient fallback to pure text if flex fails
-            if (!replyRes.ok && flexObj) {
-              replyRes = await fetch("https://api.line.me/v2/bot/message/reply", {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                  "Authorization": `Bearer ${LINE_CHANNEL_ACCESS_TOKEN}`
-                },
-                body: JSON.stringify({
-                  replyToken: replyToken,
-                  messages: [{ type: "text", text: replyMessage }]
-                })
-              });
-            }
-
-            if (!replyRes.ok) {
-              console.error("[LINE Webhook] LINE reply error status:", replyRes.status, await replyRes.text());
+            if (!lineReplyRes.ok) {
+              const errBody = await lineReplyRes.text();
+              console.error("[Vercel Webhook] LINE reply error:", errBody);
             } else {
-              console.log(`[LINE Webhook] Reply sent successfully for ${matchedOrders.length} order(s)!`);
+              console.log(`[Vercel Webhook] Reply sent successfully to user for query "${originalText}".`);
             }
           } catch (replyErr) {
-            console.error("[LINE Webhook] Error replying to LINE:", replyErr);
+            console.error("[Vercel Webhook] Failed to fetch LINE reply API:", replyErr);
           }
         }
       }
     }
 
-    return res.status(200).json({ message: "OK" });
+    return res.status(200).json({ status: "success", processed: events.length });
   } catch (err: any) {
-    console.error("[LINE Webhook] Handler error:", err);
-    return res.status(200).json({ message: "OK" });
+    console.error("[Vercel Webhook Error]", err);
+    // Never crash: always return 200 to LINE platform so LINE doesn't drop the connection
+    return res.status(200).json({ status: "error_handled", error: err.message });
   }
 }
