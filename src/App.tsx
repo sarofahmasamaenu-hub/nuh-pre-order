@@ -27,6 +27,10 @@ import {
   fetchSettingsFromFirestore,
   subscribeToSettings,
   saveCatalogueToFirestore,
+  saveCatalogueItemToFirestore,
+  deleteCatalogueItemFromFirestore,
+  fetchCatalogueFromFirestore,
+  subscribeToCatalogue,
   testFirestoreConnection,
   registerStaffOnline,
   removeStaffOnline,
@@ -766,28 +770,42 @@ export default function App() {
     // 1. Sync orders
     await syncWithServer();
 
-    // 2. Sync catalogue
+    // 2. Sync catalogue with Firestore and Server
+    try {
+      const firestoreCat = await fetchCatalogueFromFirestore();
+      if (Array.isArray(firestoreCat) && firestoreCat.length > 0) {
+        setCatalogue(prev => {
+          const map = new Map<string, CatalogueItem>();
+          INITIAL_CATALOGUE.forEach(item => map.set(item.id, item));
+          prev.forEach(item => map.set(item.id, item));
+          firestoreCat.forEach(item => map.set(item.id, item));
+          const merged = Array.from(map.values());
+          safeSetLocalStorage('nunuh_catalogue', merged);
+          return merged;
+        });
+      }
+    } catch (e) {
+      console.warn('Failed to fetch catalogue from Firestore:', e);
+    }
+
     try {
       const res = await fetch('/api/catalogue');
       if (res.ok) {
         const serverCat = await res.json();
         if (Array.isArray(serverCat) && serverCat.length > 0) {
-          setCatalogue(serverCat);
-          safeSetLocalStorage('nunuh_catalogue', serverCat);
-        } else {
-          // If server is empty, upload local catalogue
-          const localCat = localStorage.getItem('nunuh_catalogue');
-          if (localCat) {
-            await fetch('/api/catalogue', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: localCat
-            });
-          }
+          setCatalogue(prev => {
+            const map = new Map<string, CatalogueItem>();
+            INITIAL_CATALOGUE.forEach(item => map.set(item.id, item));
+            prev.forEach(item => map.set(item.id, item));
+            serverCat.forEach((item: CatalogueItem) => map.set(item.id, item));
+            const merged = Array.from(map.values());
+            safeSetLocalStorage('nunuh_catalogue', merged);
+            return merged;
+          });
         }
       }
     } catch (e) {
-      console.warn('Failed to sync catalogue:', e);
+      console.warn('Failed to sync catalogue from server:', e);
     }
 
     // 3. Sync settings from Server and Firestore (Bidirectional Smart Synchronization)
@@ -1322,17 +1340,19 @@ export default function App() {
 
       setOrders(prev => {
         const firestoreIdSet = new Set(cleanFirestore.map(o => o.id));
-        const now = Date.now();
-        // อย่าคืนชีพออเดอร์ที่ถูกลบไปแล้วจากเครื่องอื่น เว้นแต่เป็นออเดอร์ที่เพิ่งสร้างในเครื่องนี้ภายใน 15 วินาที
+        // รักษาออเดอร์ในเครื่องที่ยังไม่ได้ถูกลบ และส่งขึ้น Firestore อัตโนมัติหากยังไม่เคยขึ้น
         const locallyRetained = prev.filter(o => {
           if (!o || !o.id) return false;
           if (deletedSet.has(o.id)) return false;
           if (firestoreIdSet.has(o.id)) return false;
-          return (o.updatedAt && (now - o.updatedAt < 15000));
+          return true;
         });
 
         const merged = mergeOrders(cleanFirestore, locallyRetained);
         safeSetLocalStorage('nunuh_orders', merged);
+        if (locallyRetained.length > 0) {
+          saveOrdersBatchToFirestore(locallyRetained).catch(() => {});
+        }
         return merged;
       });
     });
@@ -1369,6 +1389,21 @@ export default function App() {
       }
     });
 
+    // ติดตั้ง Firebase Firestore Real-time Listener สำหรับแบบเสนอชุด / แคตตาล็อก (Catalogue / Dress Proposals) ซิงค์สดทุกเครื่องทันที
+    const unsubscribeCatalogue = subscribeToCatalogue((remoteCatalogue) => {
+      if (Array.isArray(remoteCatalogue) && remoteCatalogue.length > 0) {
+        setCatalogue(prev => {
+          const map = new Map<string, CatalogueItem>();
+          INITIAL_CATALOGUE.forEach(item => map.set(item.id, item));
+          prev.forEach(item => map.set(item.id, item));
+          remoteCatalogue.forEach(item => map.set(item.id, item));
+          const merged = Array.from(map.values());
+          safeSetLocalStorage('nunuh_catalogue', merged);
+          return merged;
+        });
+      }
+    });
+
     return () => {
       window.removeEventListener('storage', handleStorageChange);
       if (channel) channel.close();
@@ -1380,6 +1415,7 @@ export default function App() {
       unsubscribeFirestore();
       unsubscribeSettings();
       unsubscribeStaff();
+      unsubscribeCatalogue();
     };
   }, []);
 

@@ -53,28 +53,54 @@ export function compressImage(
         // Check if source is PNG with potential transparency
         const isPng = file.type === 'image/png';
 
-        if (!isPng) {
-          // Fill crisp white background for non-PNG to avoid black backgrounds on JPEG compression
-          ctx.fillStyle = '#FFFFFF';
-          ctx.fillRect(0, 0, width, height);
+        if (isPng) {
           ctx.drawImage(img, 0, 0, width, height);
+          let result = '';
+          try {
+            result = canvas.toDataURL('image/png');
+          } catch (e) {}
 
-          try {
-            const compressed = canvas.toDataURL('image/jpeg', quality);
-            resolve(compressed);
-          } catch (err) {
-            reject(err);
+          // If PNG is reasonably small (e.g. icon/small sketch under 180KB), keep PNG
+          if (result && result.length < 180000) {
+            resolve(result);
+            return;
           }
-        } else {
-          // Preserve PNG transparency
-          ctx.drawImage(img, 0, 0, width, height);
-          try {
-            // If PNG is very large, try WebP or PNG format
-            const compressed = canvas.toDataURL('image/png', quality);
-            resolve(compressed);
-          } catch (err) {
-            reject(err);
+        }
+
+        // For photos, dress designs and large images, use crisp JPEG compression on clean white canvas
+        const jpegCanvas = document.createElement('canvas');
+        jpegCanvas.width = width;
+        jpegCanvas.height = height;
+        const jCtx = jpegCanvas.getContext('2d');
+        if (!jCtx) {
+          reject(new Error('ไม่สามารถประมวลผล Canvas รูปภาพได้'));
+          return;
+        }
+        jCtx.imageSmoothingEnabled = true;
+        jCtx.imageSmoothingQuality = 'high';
+        jCtx.fillStyle = '#FFFFFF';
+        jCtx.fillRect(0, 0, width, height);
+        jCtx.drawImage(img, 0, 0, width, height);
+
+        try {
+          let compressed = jpegCanvas.toDataURL('image/jpeg', quality);
+          // If still over 250KB, scale down slightly to ensure instant real-time sync
+          if (compressed.length > 250000) {
+            const smallerCanvas = document.createElement('canvas');
+            const sRatio = 640 / Math.max(width, height);
+            smallerCanvas.width = Math.round(width * sRatio);
+            smallerCanvas.height = Math.round(height * sRatio);
+            const sCtx = smallerCanvas.getContext('2d');
+            if (sCtx) {
+              sCtx.fillStyle = '#FFFFFF';
+              sCtx.fillRect(0, 0, smallerCanvas.width, smallerCanvas.height);
+              sCtx.drawImage(img, 0, 0, smallerCanvas.width, smallerCanvas.height);
+              compressed = smallerCanvas.toDataURL('image/jpeg', 0.68);
+            }
           }
+          resolve(compressed);
+        } catch (err) {
+          reject(err);
         }
       };
 

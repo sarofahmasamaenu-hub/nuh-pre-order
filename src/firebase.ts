@@ -426,20 +426,119 @@ export function subscribeToSettings(onUpdate: (settings: Record<string, any>) =>
 }
 
 /**
- * Sync Catalogue to Firestore
+ * Sync entire Catalogue array to Firestore
  */
 export async function saveCatalogueToFirestore(items: CatalogueItem[]): Promise<void> {
   try {
     const promises = items.map(item => {
       const itemRef = doc(db, 'catalogue', item.id);
-      return setDoc(itemRef, {
+      return setDoc(itemRef, sanitizeForFirestore({
         ...item,
         _syncedAt: new Date().toISOString()
-      }, { merge: true });
+      }), { merge: true });
     });
     await Promise.all(promises);
+    console.log(`[Firestore] Successfully batch synced ${items.length} catalogue items`);
   } catch (e) {
     console.warn('Error saving catalogue to Firestore:', e);
+  }
+}
+
+/**
+ * Save or update a single catalogue item in Firestore in real-time
+ */
+export async function saveCatalogueItemToFirestore(item: CatalogueItem): Promise<void> {
+  if (!item || !item.id) return;
+  try {
+    const itemRef = doc(db, 'catalogue', item.id);
+    const payload = sanitizeForFirestore({
+      ...item,
+      _syncedAt: new Date().toISOString()
+    });
+    await setDoc(itemRef, payload, { merge: true });
+    console.log(`[Firestore] Successfully saved catalogue item ${item.id} (${item.name})`);
+  } catch (e) {
+    console.error('Error saving catalogue item to Firestore:', e);
+  }
+}
+
+/**
+ * Delete a single catalogue item from Firestore in real-time
+ */
+export async function deleteCatalogueItemFromFirestore(id: string): Promise<void> {
+  if (!id) return;
+  try {
+    const itemRef = doc(db, 'catalogue', id);
+    await deleteDoc(itemRef);
+    console.log(`[Firestore] Successfully deleted catalogue item ${id}`);
+  } catch (e) {
+    console.error('Error deleting catalogue item from Firestore:', e);
+  }
+}
+
+/**
+ * Fetch all catalogue items directly from Firestore
+ */
+export async function fetchCatalogueFromFirestore(): Promise<CatalogueItem[]> {
+  try {
+    const querySnapshot = await getDocs(collection(db, 'catalogue'));
+    const items: CatalogueItem[] = [];
+    querySnapshot.forEach((docSnap) => {
+      const data = docSnap.data();
+      items.push({
+        id: docSnap.id,
+        sku: data.sku || undefined,
+        name: data.name || '',
+        description: data.description || '',
+        priceRange: data.priceRange || '0 บาท',
+        fabricRecommend: data.fabricRecommend || '-',
+        image: data.image || '',
+        category: data.category || 'Abaya',
+        features: Array.isArray(data.features) ? data.features : [],
+        tailorName: data.tailorName || undefined,
+        sizes: Array.isArray(data.sizes) ? data.sizes : undefined,
+        sizePrices: data.sizePrices || undefined
+      });
+    });
+    return items;
+  } catch (e) {
+    console.warn('Error fetching catalogue from Firestore:', e);
+    return [];
+  }
+}
+
+/**
+ * Listen for real-time catalogue / dress proposals updates across all connected devices
+ */
+export function subscribeToCatalogue(onUpdate: (items: CatalogueItem[]) => void): () => void {
+  try {
+    const unsubscribe = onSnapshot(collection(db, 'catalogue'), (snapshot) => {
+      const updatedItems: CatalogueItem[] = [];
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        updatedItems.push({
+          id: docSnap.id,
+          sku: data.sku || undefined,
+          name: data.name || '',
+          description: data.description || '',
+          priceRange: data.priceRange || '0 บาท',
+          fabricRecommend: data.fabricRecommend || '-',
+          image: data.image || '',
+          category: data.category || 'Abaya',
+          features: Array.isArray(data.features) ? data.features : [],
+          tailorName: data.tailorName || undefined,
+          sizes: Array.isArray(data.sizes) ? data.sizes : undefined,
+          sizePrices: data.sizePrices || undefined
+        });
+      });
+      onUpdate(updatedItems);
+    }, (error) => {
+      console.warn('Firestore catalogue real-time subscription error:', error);
+    });
+    return unsubscribe;
+  } catch (e) {
+    console.warn('Could not attach Firestore catalogue onSnapshot:', e);
+    return () => {};
   }
 }
 
