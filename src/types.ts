@@ -145,6 +145,7 @@ export interface Order {
   pickupSigneeName?: string;   // ชื่อลูกค้า/ผู้รับมอบชุด
   pickupSignedAt?: string;     // วันเวลาที่เซ็นรับมอบชุด
   isLocked?: boolean;          // ล็อกออเดอร์ถาวร ห้ามแก้ไขหรือลบข้อมูล
+  _syncedAt?: string;          // Timestamp การซิงค์กับฐานข้อมูล
 }
 
 // รายชื่อสาขาทั้งหมดของห้องเสื้อ NUNUH
