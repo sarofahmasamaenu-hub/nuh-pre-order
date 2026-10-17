@@ -6,6 +6,17 @@ import crypto from "crypto";
 import { createServer as createViteServer } from "vite";
 import dotenv2 from "dotenv";
 import { GoogleGenAI } from "@google/genai";
+import { initializeApp as initFirebaseApp, getApps as getFirebaseApps, getApp as getFirebaseApp } from "firebase/app";
+import {
+  getFirestore,
+  collection,
+  doc,
+  deleteDoc,
+  setDoc,
+  onSnapshot,
+  arrayUnion,
+  getDocs
+} from "firebase/firestore";
 
 // db.ts
 import { Pool } from "pg";
@@ -458,6 +469,591 @@ async function saveReviewsToDb(reviews) {
   }
 }
 
+// src/utils/lineMatcher.ts
+var STATUS_MAP_TH = {
+  RECEIVED: { label: "1. \u0E23\u0E31\u0E1A\u0E2D\u0E2D\u0E40\u0E14\u0E2D\u0E23\u0E4C\u0E40\u0E23\u0E35\u0E22\u0E1A\u0E23\u0E49\u0E2D\u0E22", desc: "\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E41\u0E25\u0E30\u0E2A\u0E31\u0E14\u0E2A\u0E48\u0E27\u0E19\u0E40\u0E02\u0E49\u0E32\u0E23\u0E30\u0E1A\u0E1A\u0E40\u0E23\u0E35\u0E22\u0E1A\u0E23\u0E49\u0E2D\u0E22\u0E41\u0E25\u0E49\u0E27", icon: "\u{1F4CB}", badgeColor: "#3B82F6" },
+  DESIGNING: { label: "2. \u0E2A\u0E23\u0E38\u0E1B\u0E41\u0E1A\u0E1A/\u0E40\u0E15\u0E23\u0E35\u0E22\u0E21\u0E1C\u0E49\u0E32", desc: "\u0E27\u0E32\u0E07\u0E41\u0E1E\u0E17\u0E40\u0E17\u0E34\u0E23\u0E4C\u0E19 \u0E2D\u0E2D\u0E01\u0E41\u0E1A\u0E1A \u0E41\u0E25\u0E30\u0E40\u0E15\u0E23\u0E35\u0E22\u0E21\u0E1C\u0E49\u0E32\u0E15\u0E31\u0E14\u0E40\u0E22\u0E47\u0E1A", icon: "\u270F\uFE0F", badgeColor: "#6366F1" },
+  FABRIC_ORDERED: { label: "\u0E2A\u0E31\u0E48\u0E07\u0E1C\u0E49\u0E32/\u0E2D\u0E30\u0E44\u0E2B\u0E25\u0E48", desc: "\u0E2D\u0E22\u0E39\u0E48\u0E23\u0E30\u0E2B\u0E27\u0E48\u0E32\u0E07\u0E23\u0E2D\u0E1C\u0E49\u0E32\u0E2B\u0E23\u0E37\u0E2D\u0E2D\u0E38\u0E1B\u0E01\u0E23\u0E13\u0E4C\u0E2A\u0E31\u0E48\u0E07\u0E1E\u0E34\u0E40\u0E28\u0E29", icon: "\u{1F4E6}", badgeColor: "#8B5CF6" },
+  FABRIC_RECEIVED: { label: "\u0E44\u0E14\u0E49\u0E23\u0E31\u0E1A\u0E1C\u0E49\u0E32\u0E41\u0E25\u0E49\u0E27", desc: "\u0E1C\u0E49\u0E32\u0E41\u0E25\u0E30\u0E2D\u0E38\u0E1B\u0E01\u0E23\u0E13\u0E4C\u0E08\u0E31\u0E14\u0E40\u0E15\u0E23\u0E35\u0E22\u0E21\u0E04\u0E23\u0E1A\u0E16\u0E49\u0E27\u0E19 \u0E1E\u0E23\u0E49\u0E2D\u0E21\u0E02\u0E36\u0E49\u0E19\u0E41\u0E1A\u0E1A", icon: "\u{1F9F5}", badgeColor: "#8B5CF6" },
+  PATTERN_MAKING: { label: "\u0E2A\u0E23\u0E49\u0E32\u0E07\u0E41\u0E1E\u0E17\u0E40\u0E17\u0E34\u0E23\u0E4C\u0E19", desc: "\u0E2A\u0E23\u0E49\u0E32\u0E07\u0E41\u0E1A\u0E1A\u0E41\u0E1E\u0E17\u0E40\u0E17\u0E34\u0E23\u0E4C\u0E19\u0E15\u0E32\u0E21\u0E2A\u0E31\u0E14\u0E2A\u0E48\u0E27\u0E19\u0E40\u0E09\u0E1E\u0E32\u0E30\u0E1A\u0E38\u0E04\u0E04\u0E25", icon: "\u{1F4D0}", badgeColor: "#EC4899" },
+  CUTTING: { label: "3. \u0E02\u0E36\u0E49\u0E19\u0E41\u0E1A\u0E1A\u0E41\u0E25\u0E30\u0E15\u0E31\u0E14\u0E1C\u0E49\u0E32", desc: "\u0E0A\u0E48\u0E32\u0E07\u0E15\u0E31\u0E14\u0E1C\u0E49\u0E32\u0E15\u0E32\u0E21\u0E41\u0E1E\u0E17\u0E40\u0E17\u0E34\u0E23\u0E4C\u0E19\u0E40\u0E23\u0E35\u0E22\u0E1A\u0E23\u0E49\u0E2D\u0E22\u0E41\u0E25\u0E49\u0E27", icon: "\u2702\uFE0F", badgeColor: "#F59E0B" },
+  SEWING: { label: "4. \u0E01\u0E33\u0E25\u0E31\u0E07\u0E40\u0E22\u0E47\u0E1A\u0E1B\u0E23\u0E30\u0E01\u0E2D\u0E1A", desc: "\u0E0A\u0E48\u0E32\u0E07\u0E01\u0E33\u0E25\u0E31\u0E07\u0E40\u0E22\u0E47\u0E1A\u0E02\u0E36\u0E49\u0E19\u0E42\u0E04\u0E23\u0E07\u0E0A\u0E38\u0E14\u0E41\u0E25\u0E30\u0E40\u0E01\u0E47\u0E1A\u0E23\u0E32\u0E22\u0E25\u0E30\u0E40\u0E2D\u0E35\u0E22\u0E14", icon: "\u{1FAA1}", badgeColor: "#F59E0B" },
+  PATTERN_SEWING: { label: "\u0E17\u0E33\u0E41\u0E1E\u0E17\u0E40\u0E17\u0E34\u0E23\u0E4C\u0E19/\u0E15\u0E31\u0E14\u0E40\u0E22\u0E47\u0E1A", desc: "\u0E01\u0E33\u0E25\u0E31\u0E07\u0E2A\u0E23\u0E49\u0E32\u0E07\u0E41\u0E1E\u0E17\u0E40\u0E17\u0E34\u0E23\u0E4C\u0E19\u0E41\u0E25\u0E30\u0E40\u0E22\u0E47\u0E1A\u0E1B\u0E23\u0E30\u0E01\u0E2D\u0E1A\u0E0A\u0E38\u0E14", icon: "\u{1FAA1}", badgeColor: "#F59E0B" },
+  FIRST_FITTING_READY: { label: "\u0E1E\u0E23\u0E49\u0E2D\u0E21\u0E25\u0E2D\u0E07\u0E42\u0E04\u0E23\u0E07\u0E0A\u0E38\u0E14", desc: "\u0E42\u0E04\u0E23\u0E07\u0E0A\u0E38\u0E14\u0E1E\u0E23\u0E49\u0E2D\u0E21\u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E01\u0E32\u0E23\u0E25\u0E2D\u0E07\u0E42\u0E04\u0E23\u0E07\u0E04\u0E23\u0E31\u0E49\u0E07\u0E17\u0E35\u0E48 1", icon: "\u{1F457}", badgeColor: "#A855F7" },
+  FIRST_FITTING_DONE: { label: "\u0E25\u0E2D\u0E07\u0E42\u0E04\u0E23\u0E07\u0E40\u0E23\u0E35\u0E22\u0E1A\u0E23\u0E49\u0E2D\u0E22", desc: "\u0E1B\u0E23\u0E31\u0E1A\u0E41\u0E01\u0E49\u0E2A\u0E31\u0E14\u0E2A\u0E48\u0E27\u0E19\u0E15\u0E32\u0E21\u0E1C\u0E25\u0E01\u0E32\u0E23\u0E25\u0E2D\u0E07\u0E42\u0E04\u0E23\u0E07\u0E0A\u0E38\u0E14", icon: "\u2728", badgeColor: "#A855F7" },
+  SECOND_FITTING_READY: { label: "\u0E1E\u0E23\u0E49\u0E2D\u0E21\u0E25\u0E2D\u0E07\u0E40\u0E01\u0E47\u0E1A\u0E17\u0E23\u0E07", desc: "\u0E0A\u0E38\u0E14\u0E1E\u0E23\u0E49\u0E2D\u0E21\u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E01\u0E32\u0E23\u0E25\u0E2D\u0E07\u0E40\u0E01\u0E47\u0E1A\u0E17\u0E23\u0E07\u0E04\u0E23\u0E31\u0E49\u0E07\u0E17\u0E35\u0E48 2", icon: "\u{1F457}", badgeColor: "#A855F7" },
+  SECOND_FITTING_DONE: { label: "\u0E25\u0E2D\u0E07\u0E40\u0E01\u0E47\u0E1A\u0E17\u0E23\u0E07\u0E40\u0E23\u0E35\u0E22\u0E1A\u0E23\u0E49\u0E2D\u0E22", desc: "\u0E1B\u0E23\u0E31\u0E1A\u0E41\u0E15\u0E48\u0E07\u0E2A\u0E31\u0E14\u0E2A\u0E48\u0E27\u0E19\u0E23\u0E2D\u0E1A\u0E2A\u0E38\u0E14\u0E17\u0E49\u0E32\u0E22\u0E01\u0E48\u0E2D\u0E19\u0E40\u0E01\u0E47\u0E1A\u0E23\u0E32\u0E22\u0E25\u0E30\u0E40\u0E2D\u0E35\u0E22\u0E14", icon: "\u2728", badgeColor: "#A855F7" },
+  EMBROIDERY: { label: "\u0E07\u0E32\u0E19\u0E1B\u0E31\u0E01/\u0E25\u0E39\u0E01\u0E44\u0E21\u0E49", desc: "\u0E2D\u0E22\u0E39\u0E48\u0E23\u0E30\u0E2B\u0E27\u0E48\u0E32\u0E07\u0E07\u0E32\u0E19\u0E1B\u0E31\u0E01 \u0E1B\u0E23\u0E30\u0E14\u0E31\u0E1A\u0E04\u0E23\u0E34\u0E2A\u0E15\u0E31\u0E25 \u0E2B\u0E23\u0E37\u0E2D\u0E15\u0E34\u0E14\u0E25\u0E39\u0E01\u0E44\u0E21\u0E49", icon: "\u{1FAA1}", badgeColor: "#EC4899" },
+  HAND_FINISHING: { label: "\u0E2A\u0E2D\u0E22\u0E21\u0E37\u0E2D/\u0E40\u0E01\u0E47\u0E1A\u0E23\u0E34\u0E21", desc: "\u0E40\u0E01\u0E47\u0E1A\u0E23\u0E32\u0E22\u0E25\u0E30\u0E40\u0E2D\u0E35\u0E22\u0E14\u0E14\u0E49\u0E27\u0E22\u0E21\u0E37\u0E2D\u0E41\u0E25\u0E30\u0E07\u0E32\u0E19\u0E1D\u0E35\u0E21\u0E37\u0E2D\u0E1B\u0E23\u0E30\u0E13\u0E35\u0E15", icon: "\u{1FAA1}", badgeColor: "#EC4899" },
+  FITTING: { label: "5. \u0E02\u0E31\u0E49\u0E19\u0E15\u0E2D\u0E19\u0E1F\u0E34\u0E15\u0E15\u0E34\u0E49\u0E07", desc: "\u0E19\u0E31\u0E14\u0E2B\u0E21\u0E32\u0E22\u0E25\u0E2D\u0E07\u0E0A\u0E38\u0E14\u0E41\u0E25\u0E30\u0E1B\u0E23\u0E31\u0E1A\u0E41\u0E15\u0E48\u0E07\u0E17\u0E23\u0E07\u0E15\u0E32\u0E21\u0E23\u0E39\u0E1B\u0E23\u0E48\u0E32\u0E07", icon: "\u{1F457}", badgeColor: "#A855F7" },
+  ALTERING: { label: "\u0E1B\u0E23\u0E31\u0E1A\u0E41\u0E01\u0E49\u0E17\u0E23\u0E07", desc: "\u0E0A\u0E48\u0E32\u0E07\u0E01\u0E33\u0E25\u0E31\u0E07\u0E1B\u0E23\u0E31\u0E1A\u0E41\u0E01\u0E49\u0E2A\u0E31\u0E14\u0E2A\u0E48\u0E27\u0E19\u0E15\u0E32\u0E21\u0E17\u0E35\u0E48\u0E19\u0E31\u0E14\u0E1F\u0E34\u0E15\u0E15\u0E34\u0E49\u0E07", icon: "\u2702\uFE0F", badgeColor: "#F97316" },
+  VERIFY_DETAILS: { label: "\u0E15\u0E23\u0E27\u0E08\u0E2A\u0E2D\u0E1A\u0E23\u0E32\u0E22\u0E25\u0E30\u0E40\u0E2D\u0E35\u0E22\u0E14", desc: "\u0E15\u0E23\u0E27\u0E08\u0E2A\u0E2D\u0E1A\u0E04\u0E27\u0E32\u0E21\u0E16\u0E39\u0E01\u0E15\u0E49\u0E2D\u0E07\u0E02\u0E2D\u0E07\u0E41\u0E1A\u0E1A\u0E0A\u0E38\u0E14\u0E41\u0E25\u0E30\u0E2A\u0E31\u0E14\u0E2A\u0E48\u0E27\u0E19", icon: "\u{1F50D}", badgeColor: "#06B6D4" },
+  QUALITY_CHECK: { label: "\u0E15\u0E23\u0E27\u0E08\u0E40\u0E0A\u0E47\u0E01\u0E04\u0E38\u0E13\u0E20\u0E32\u0E1E (QC)", desc: "\u0E15\u0E23\u0E27\u0E08\u0E2A\u0E2D\u0E1A\u0E04\u0E27\u0E32\u0E21\u0E1B\u0E23\u0E30\u0E13\u0E35\u0E15\u0E02\u0E2D\u0E07\u0E15\u0E30\u0E40\u0E02\u0E47\u0E1A \u0E0B\u0E34\u0E1B \u0E41\u0E25\u0E30\u0E17\u0E23\u0E07\u0E0A\u0E38\u0E14", icon: "\u{1F50D}", badgeColor: "#06B6D4" },
+  IRONING_PACKING: { label: "\u0E23\u0E35\u0E14\u0E2D\u0E31\u0E14\u0E41\u0E25\u0E30\u0E41\u0E1E\u0E47\u0E01\u0E0A\u0E38\u0E14", desc: "\u0E23\u0E35\u0E14\u0E44\u0E2D\u0E19\u0E49\u0E33\u0E08\u0E31\u0E14\u0E17\u0E23\u0E07\u0E0A\u0E38\u0E14\u0E41\u0E25\u0E30\u0E41\u0E1E\u0E47\u0E01\u0E43\u0E2A\u0E48\u0E16\u0E38\u0E07\u0E04\u0E25\u0E38\u0E21\u0E40\u0E2A\u0E37\u0E49\u0E2D\u0E1C\u0E49\u0E32", icon: "\u{1F454}", badgeColor: "#14B8A6" },
+  READY: { label: "6. \u0E1E\u0E23\u0E49\u0E2D\u0E21\u0E2A\u0E48\u0E07\u0E21\u0E2D\u0E1A/\u0E23\u0E31\u0E1A\u0E0A\u0E38\u0E14", desc: "\u0E0A\u0E38\u0E14\u0E15\u0E31\u0E14\u0E40\u0E22\u0E47\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E2A\u0E21\u0E1A\u0E39\u0E23\u0E13\u0E4C 100% \u0E1E\u0E23\u0E49\u0E2D\u0E21\u0E19\u0E31\u0E14\u0E23\u0E31\u0E1A\u0E0A\u0E38\u0E14\u0E2B\u0E23\u0E37\u0E2D\u0E08\u0E31\u0E14\u0E2A\u0E48\u0E07", icon: "\u{1F389}", badgeColor: "#10B981" },
+  SHIPPED: { label: "\u0E08\u0E31\u0E14\u0E2A\u0E48\u0E07\u0E1E\u0E31\u0E2A\u0E14\u0E38\u0E41\u0E25\u0E49\u0E27", desc: "\u0E08\u0E31\u0E14\u0E2A\u0E48\u0E07\u0E1C\u0E48\u0E32\u0E19\u0E1A\u0E23\u0E34\u0E29\u0E31\u0E17\u0E02\u0E19\u0E2A\u0E48\u0E07\u0E40\u0E23\u0E35\u0E22\u0E1A\u0E23\u0E49\u0E2D\u0E22\u0E41\u0E25\u0E49\u0E27", icon: "\u{1F69A}", badgeColor: "#10B981" },
+  DELIVERED: { label: "\u0E1E\u0E31\u0E2A\u0E14\u0E38\u0E16\u0E36\u0E07\u0E1C\u0E39\u0E49\u0E23\u0E31\u0E1A\u0E41\u0E25\u0E49\u0E27", desc: "\u0E1E\u0E31\u0E2A\u0E14\u0E38\u0E08\u0E31\u0E14\u0E2A\u0E48\u0E07\u0E16\u0E36\u0E07\u0E25\u0E39\u0E01\u0E04\u0E49\u0E32\u0E40\u0E23\u0E35\u0E22\u0E1A\u0E23\u0E49\u0E2D\u0E22\u0E41\u0E25\u0E49\u0E27", icon: "\u{1F4EC}", badgeColor: "#10B981" },
+  COMPLETED: { label: "7. \u0E2A\u0E48\u0E07\u0E21\u0E2D\u0E1A\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08 \u{1F389}", desc: "\u0E25\u0E39\u0E01\u0E04\u0E49\u0E32\u0E15\u0E23\u0E27\u0E08\u0E23\u0E31\u0E1A\u0E0A\u0E38\u0E14\u0E41\u0E25\u0E30\u0E40\u0E0B\u0E47\u0E19\u0E23\u0E31\u0E1A\u0E21\u0E2D\u0E1A\u0E40\u0E23\u0E35\u0E22\u0E1A\u0E23\u0E49\u0E2D\u0E22\u0E41\u0E25\u0E49\u0E27", icon: "\u{1F3C6}", badgeColor: "#059669" },
+  CANCELLED: { label: "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01\u0E2D\u0E2D\u0E40\u0E14\u0E2D\u0E23\u0E4C", desc: "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E2D\u0E2D\u0E40\u0E14\u0E2D\u0E23\u0E4C\u0E19\u0E35\u0E49\u0E16\u0E39\u0E01\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01", icon: "\u274C", badgeColor: "#EF4444" },
+  // Thai Legacy Aliases
+  "\u0E01\u0E33\u0E25\u0E31\u0E07\u0E15\u0E31\u0E14\u0E40\u0E22\u0E47\u0E1A": { label: "4. \u0E01\u0E33\u0E25\u0E31\u0E07\u0E40\u0E22\u0E47\u0E1A\u0E1B\u0E23\u0E30\u0E01\u0E2D\u0E1A", desc: "\u0E0A\u0E48\u0E32\u0E07\u0E01\u0E33\u0E25\u0E31\u0E07\u0E40\u0E22\u0E47\u0E1A\u0E02\u0E36\u0E49\u0E19\u0E42\u0E04\u0E23\u0E07\u0E0A\u0E38\u0E14\u0E41\u0E25\u0E30\u0E40\u0E01\u0E47\u0E1A\u0E23\u0E32\u0E22\u0E25\u0E30\u0E40\u0E2D\u0E35\u0E22\u0E14", icon: "\u{1FAA1}", badgeColor: "#F59E0B" },
+  "\u0E15\u0E31\u0E14\u0E40\u0E22\u0E47\u0E1A": { label: "4. \u0E01\u0E33\u0E25\u0E31\u0E07\u0E40\u0E22\u0E47\u0E1A\u0E1B\u0E23\u0E30\u0E01\u0E2D\u0E1A", desc: "\u0E0A\u0E48\u0E32\u0E07\u0E01\u0E33\u0E25\u0E31\u0E07\u0E40\u0E22\u0E47\u0E1A\u0E02\u0E36\u0E49\u0E19\u0E42\u0E04\u0E23\u0E07\u0E0A\u0E38\u0E14\u0E41\u0E25\u0E30\u0E40\u0E01\u0E47\u0E1A\u0E23\u0E32\u0E22\u0E25\u0E30\u0E40\u0E2D\u0E35\u0E22\u0E14", icon: "\u{1FAA1}", badgeColor: "#F59E0B" },
+  "\u0E23\u0E31\u0E1A\u0E2D\u0E2D\u0E40\u0E14\u0E2D\u0E23\u0E4C": { label: "1. \u0E23\u0E31\u0E1A\u0E2D\u0E2D\u0E40\u0E14\u0E2D\u0E23\u0E4C\u0E40\u0E23\u0E35\u0E22\u0E1A\u0E23\u0E49\u0E2D\u0E22", desc: "\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E41\u0E25\u0E30\u0E2A\u0E31\u0E14\u0E2A\u0E48\u0E27\u0E19\u0E40\u0E02\u0E49\u0E32\u0E23\u0E30\u0E1A\u0E1A\u0E40\u0E23\u0E35\u0E22\u0E1A\u0E23\u0E49\u0E2D\u0E22\u0E41\u0E25\u0E49\u0E27", icon: "\u{1F4CB}", badgeColor: "#3B82F6" },
+  "\u0E2D\u0E2D\u0E01\u0E41\u0E1A\u0E1A": { label: "2. \u0E2A\u0E23\u0E38\u0E1B\u0E41\u0E1A\u0E1A/\u0E40\u0E15\u0E23\u0E35\u0E22\u0E21\u0E1C\u0E49\u0E32", desc: "\u0E27\u0E32\u0E07\u0E41\u0E1E\u0E17\u0E40\u0E17\u0E34\u0E23\u0E4C\u0E19 \u0E2D\u0E2D\u0E01\u0E41\u0E1A\u0E1A \u0E41\u0E25\u0E30\u0E40\u0E15\u0E23\u0E35\u0E22\u0E21\u0E1C\u0E49\u0E32\u0E15\u0E31\u0E14\u0E40\u0E22\u0E47\u0E1A", icon: "\u270F\uFE0F", badgeColor: "#6366F1" },
+  "\u0E15\u0E31\u0E14\u0E1C\u0E49\u0E32": { label: "3. \u0E02\u0E36\u0E49\u0E19\u0E41\u0E1A\u0E1A\u0E41\u0E25\u0E30\u0E15\u0E31\u0E14\u0E1C\u0E49\u0E32", desc: "\u0E0A\u0E48\u0E32\u0E07\u0E15\u0E31\u0E14\u0E1C\u0E49\u0E32\u0E15\u0E32\u0E21\u0E41\u0E1E\u0E17\u0E40\u0E17\u0E34\u0E23\u0E4C\u0E19\u0E40\u0E23\u0E35\u0E22\u0E1A\u0E23\u0E49\u0E2D\u0E22\u0E41\u0E25\u0E49\u0E27", icon: "\u2702\uFE0F", badgeColor: "#F59E0B" },
+  "\u0E1F\u0E34\u0E15\u0E15\u0E34\u0E49\u0E07": { label: "5. \u0E02\u0E31\u0E49\u0E19\u0E15\u0E2D\u0E19\u0E1F\u0E34\u0E15\u0E15\u0E34\u0E49\u0E07", desc: "\u0E19\u0E31\u0E14\u0E2B\u0E21\u0E32\u0E22\u0E25\u0E2D\u0E07\u0E0A\u0E38\u0E14\u0E41\u0E25\u0E30\u0E1B\u0E23\u0E31\u0E1A\u0E41\u0E15\u0E48\u0E07\u0E17\u0E23\u0E07\u0E15\u0E32\u0E21\u0E23\u0E39\u0E1B\u0E23\u0E48\u0E32\u0E07", icon: "\u{1F457}", badgeColor: "#A855F7" },
+  "\u0E1E\u0E23\u0E49\u0E2D\u0E21\u0E2A\u0E48\u0E07\u0E21\u0E2D\u0E1A": { label: "6. \u0E1E\u0E23\u0E49\u0E2D\u0E21\u0E2A\u0E48\u0E07\u0E21\u0E2D\u0E1A/\u0E23\u0E31\u0E1A\u0E0A\u0E38\u0E14", desc: "\u0E0A\u0E38\u0E14\u0E15\u0E31\u0E14\u0E40\u0E22\u0E47\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E2A\u0E21\u0E1A\u0E39\u0E23\u0E13\u0E4C 100% \u0E1E\u0E23\u0E49\u0E2D\u0E21\u0E19\u0E31\u0E14\u0E23\u0E31\u0E1A\u0E0A\u0E38\u0E14\u0E2B\u0E23\u0E37\u0E2D\u0E08\u0E31\u0E14\u0E2A\u0E48\u0E07", icon: "\u{1F389}", badgeColor: "#10B981" },
+  "\u0E2A\u0E48\u0E07\u0E21\u0E2D\u0E1A\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08": { label: "7. \u0E2A\u0E48\u0E07\u0E21\u0E2D\u0E1A\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08 \u{1F389}", desc: "\u0E25\u0E39\u0E01\u0E04\u0E49\u0E32\u0E15\u0E23\u0E27\u0E08\u0E23\u0E31\u0E1A\u0E0A\u0E38\u0E14\u0E41\u0E25\u0E30\u0E40\u0E0B\u0E47\u0E19\u0E23\u0E31\u0E1A\u0E21\u0E2D\u0E1A\u0E40\u0E23\u0E35\u0E22\u0E1A\u0E23\u0E49\u0E2D\u0E22\u0E41\u0E25\u0E49\u0E27", icon: "\u{1F3C6}", badgeColor: "#059669" }
+};
+function getStatusDetails(status) {
+  if (!status) {
+    return { label: "\u0E01\u0E33\u0E25\u0E31\u0E07\u0E14\u0E33\u0E40\u0E19\u0E34\u0E19\u0E01\u0E32\u0E23", desc: "\u0E2D\u0E22\u0E39\u0E48\u0E23\u0E30\u0E2B\u0E27\u0E48\u0E32\u0E07\u0E02\u0E31\u0E49\u0E19\u0E15\u0E2D\u0E19\u0E01\u0E32\u0E23\u0E15\u0E31\u0E14\u0E40\u0E22\u0E47\u0E1A", icon: "\u23F3", badgeColor: "#64748B" };
+  }
+  const clean = status.trim();
+  if (STATUS_MAP_TH[clean]) {
+    return STATUS_MAP_TH[clean];
+  }
+  const upper = clean.toUpperCase();
+  if (STATUS_MAP_TH[upper]) {
+    return STATUS_MAP_TH[upper];
+  }
+  return { label: clean, desc: "\u0E2D\u0E22\u0E39\u0E48\u0E23\u0E30\u0E2B\u0E27\u0E48\u0E32\u0E07\u0E02\u0E31\u0E49\u0E19\u0E15\u0E2D\u0E19\u0E01\u0E32\u0E23\u0E15\u0E31\u0E14\u0E40\u0E22\u0E47\u0E1A", icon: "\u23F3", badgeColor: "#64748B" };
+}
+function cleanCustomerQuery(q) {
+  if (!q) return "";
+  let res = q.trim();
+  const prefixes = [
+    "\u0E2A\u0E27\u0E31\u0E2A\u0E14\u0E35\u0E04\u0E48\u0E30",
+    "\u0E2A\u0E27\u0E31\u0E2A\u0E14\u0E35\u0E04\u0E23\u0E31\u0E1A",
+    "\u0E2A\u0E27\u0E31\u0E2A\u0E14\u0E35",
+    "\u0E2B\u0E27\u0E31\u0E14\u0E14\u0E35\u0E04\u0E48\u0E30",
+    "\u0E2B\u0E27\u0E31\u0E14\u0E14\u0E35\u0E04\u0E23\u0E31\u0E1A",
+    "\u0E2B\u0E27\u0E31\u0E14\u0E14\u0E35",
+    "\u0E02\u0E2D\u0E2A\u0E2D\u0E1A\u0E16\u0E32\u0E21\u0E04\u0E48\u0E30",
+    "\u0E02\u0E2D\u0E2A\u0E2D\u0E1A\u0E16\u0E32\u0E21\u0E04\u0E23\u0E31\u0E1A",
+    "\u0E02\u0E2D\u0E2A\u0E2D\u0E1A\u0E16\u0E32\u0E21",
+    "\u0E2A\u0E2D\u0E1A\u0E16\u0E32\u0E21\u0E04\u0E48\u0E30",
+    "\u0E2A\u0E2D\u0E1A\u0E16\u0E32\u0E21\u0E04\u0E23\u0E31\u0E1A",
+    "\u0E2A\u0E2D\u0E1A\u0E16\u0E32\u0E21",
+    "\u0E02\u0E2D\u0E40\u0E0A\u0E47\u0E04\u0E2A\u0E16\u0E32\u0E19\u0E30\u0E04\u0E48\u0E30",
+    "\u0E02\u0E2D\u0E40\u0E0A\u0E47\u0E04\u0E2A\u0E16\u0E32\u0E19\u0E30\u0E04\u0E23\u0E31\u0E1A",
+    "\u0E02\u0E2D\u0E40\u0E0A\u0E47\u0E04\u0E2A\u0E16\u0E32\u0E19\u0E30",
+    "\u0E40\u0E0A\u0E47\u0E04\u0E2A\u0E16\u0E32\u0E19\u0E30\u0E04\u0E48\u0E30",
+    "\u0E40\u0E0A\u0E47\u0E04\u0E2A\u0E16\u0E32\u0E19\u0E30\u0E04\u0E23\u0E31\u0E1A",
+    "\u0E40\u0E0A\u0E47\u0E04\u0E2A\u0E16\u0E32\u0E19\u0E30",
+    "\u0E02\u0E2D\u0E40\u0E0A\u0E47\u0E04\u0E0A\u0E38\u0E14\u0E04\u0E48\u0E30",
+    "\u0E02\u0E2D\u0E40\u0E0A\u0E47\u0E04\u0E0A\u0E38\u0E14\u0E04\u0E23\u0E31\u0E1A",
+    "\u0E02\u0E2D\u0E40\u0E0A\u0E47\u0E04\u0E0A\u0E38\u0E14",
+    "\u0E40\u0E0A\u0E47\u0E04\u0E0A\u0E38\u0E14\u0E04\u0E48\u0E30",
+    "\u0E40\u0E0A\u0E47\u0E04\u0E0A\u0E38\u0E14\u0E04\u0E23\u0E31\u0E1A",
+    "\u0E40\u0E0A\u0E47\u0E04\u0E0A\u0E38\u0E14",
+    "\u0E15\u0E34\u0E14\u0E15\u0E32\u0E21\u0E2A\u0E16\u0E32\u0E19\u0E30",
+    "\u0E15\u0E34\u0E14\u0E15\u0E32\u0E21\u0E0A\u0E38\u0E14",
+    "\u0E15\u0E34\u0E14\u0E15\u0E32\u0E21\u0E2D\u0E2D\u0E40\u0E14\u0E2D\u0E23\u0E4C",
+    "\u0E15\u0E34\u0E14\u0E15\u0E32\u0E21",
+    "\u0E02\u0E2D\u0E40\u0E0A\u0E47\u0E04",
+    "\u0E02\u0E2D\u0E14\u0E39\u0E2A\u0E16\u0E32\u0E19\u0E30",
+    "\u0E02\u0E2D\u0E14\u0E39\u0E0A\u0E38\u0E14",
+    "\u0E02\u0E2D\u0E14\u0E39",
+    "\u0E14\u0E39\u0E2A\u0E16\u0E32\u0E19\u0E30",
+    "\u0E14\u0E39\u0E0A\u0E38\u0E14",
+    "\u0E40\u0E0A\u0E47\u0E04\u0E2D\u0E2D\u0E40\u0E14\u0E2D\u0E23\u0E4C",
+    "\u0E40\u0E0A\u0E47\u0E04",
+    "\u0E0A\u0E38\u0E14\u0E02\u0E2D\u0E07",
+    "\u0E0A\u0E38\u0E14\u0E04\u0E38\u0E13",
+    "\u0E0A\u0E38\u0E14",
+    "\u0E2D\u0E2D\u0E40\u0E14\u0E2D\u0E23\u0E4C\u0E02\u0E2D\u0E07",
+    "\u0E2D\u0E2D\u0E40\u0E14\u0E2D\u0E23\u0E4C\u0E04\u0E38\u0E13",
+    "\u0E2D\u0E2D\u0E40\u0E14\u0E2D\u0E23\u0E4C",
+    "\u0E02\u0E2D\u0E07",
+    "\u0E04\u0E38\u0E13",
+    "\u0E19\u0E32\u0E07\u0E2A\u0E32\u0E27",
+    "\u0E19.\u0E2A.",
+    "\u0E19\u0E32\u0E07",
+    "\u0E19\u0E32\u0E22",
+    "\u0E14.\u0E0D.",
+    "\u0E14.\u0E0A.",
+    "\u0E1E\u0E35\u0E48",
+    "\u0E19\u0E49\u0E2D\u0E07",
+    "\u0E0A\u0E48\u0E32\u0E07",
+    "\u0E25\u0E39\u0E01\u0E04\u0E49\u0E32",
+    "\u0E40\u0E1A\u0E2D\u0E23\u0E4C\u0E42\u0E17\u0E23\u0E28\u0E31\u0E1E\u0E17\u0E4C",
+    "\u0E40\u0E1A\u0E2D\u0E23\u0E4C\u0E42\u0E17\u0E23",
+    "\u0E40\u0E1A\u0E2D\u0E23\u0E4C",
+    "\u0E42\u0E17\u0E23"
+  ];
+  const suffixes = [
+    "\u0E02\u0E2D\u0E1A\u0E04\u0E38\u0E13\u0E04\u0E48\u0E30",
+    "\u0E02\u0E2D\u0E1A\u0E04\u0E38\u0E13\u0E04\u0E23\u0E31\u0E1A",
+    "\u0E19\u0E30\u0E04\u0E30",
+    "\u0E19\u0E30\u0E04\u0E48\u0E30",
+    "\u0E2B\u0E19\u0E48\u0E2D\u0E22\u0E04\u0E48\u0E30",
+    "\u0E2B\u0E19\u0E48\u0E2D\u0E22\u0E04\u0E23\u0E31\u0E1A",
+    "\u0E2B\u0E19\u0E48\u0E2D\u0E22",
+    "\u0E14\u0E49\u0E27\u0E22\u0E04\u0E48\u0E30",
+    "\u0E14\u0E49\u0E27\u0E22\u0E04\u0E23\u0E31\u0E1A",
+    "\u0E04\u0E48\u0E30",
+    "\u0E04\u0E30",
+    "\u0E04\u0E23\u0E31\u0E1A",
+    "\u0E08\u0E49\u0E32",
+    "\u0E08\u0E4A\u0E30",
+    "\u0E44\u0E2B\u0E21\u0E04\u0E30",
+    "\u0E21\u0E31\u0E49\u0E22\u0E04\u0E30",
+    "\u0E44\u0E2B\u0E21\u0E04\u0E23\u0E31\u0E1A",
+    "\u0E21\u0E31\u0E49\u0E22\u0E04\u0E23\u0E31\u0E1A"
+  ];
+  let changed = true;
+  let loops = 0;
+  while (changed && loops < 10) {
+    loops++;
+    changed = false;
+    res = res.trim();
+    for (const p of prefixes) {
+      if (res.startsWith(p)) {
+        res = res.slice(p.length).trim();
+        changed = true;
+      }
+    }
+    for (const s of suffixes) {
+      if (res.endsWith(s)) {
+        res = res.slice(0, -s.length).trim();
+        changed = true;
+      }
+    }
+  }
+  return res.trim();
+}
+function smartMatchOrders(inputText, ordersList, senderUserId) {
+  if (!inputText || !ordersList || ordersList.length === 0) return [];
+  const raw = inputText.trim();
+  const lower = raw.toLowerCase();
+  const digitsOnly = lower.replace(/\D/g, "");
+  const phoneCandidates = [];
+  const phoneMatches = raw.match(/(?:0|\+?66)[0-9\s-]{8,14}/g) || [];
+  for (const m of phoneMatches) {
+    const d = m.replace(/\D/g, "");
+    const normalized = d.startsWith("66") ? "0" + d.slice(2) : d;
+    if (normalized.length >= 9 && normalized.length <= 10) {
+      phoneCandidates.push(normalized);
+    }
+  }
+  if (digitsOnly.length >= 9 && digitsOnly.length <= 10) {
+    const norm = digitsOnly.startsWith("66") ? "0" + digitsOnly.slice(2) : digitsOnly;
+    if (!phoneCandidates.includes(norm)) phoneCandidates.push(norm);
+  }
+  const orderNumCandidates = [];
+  const nuMatches = raw.match(/NU-?\s*\d{3,6}/gi) || [];
+  for (const m of nuMatches) {
+    orderNumCandidates.push(m.replace(/[- \s]/g, "").toLowerCase());
+  }
+  const pureDigitsMatch = raw.match(/\b\d{4,6}\b/g) || [];
+  for (const pd of pureDigitsMatch) {
+    orderNumCandidates.push(pd);
+    orderNumCandidates.push("nu" + pd);
+  }
+  const cleanSearch = lower.replace(/[- \s\t\n()#_]/g, "");
+  const strippedText = cleanCustomerQuery(raw).toLowerCase();
+  const strippedClean = strippedText.replace(/[- \s\t\n()#_]/g, "");
+  const matched = ordersList.filter((order) => {
+    if (!order) return false;
+    const orderPhone = (order.customerPhone || "").replace(/\D/g, "");
+    const orderNum = (order.orderNumber || "").replace(/[- \s]/g, "").toLowerCase();
+    const orderNumDigits = orderNum.replace(/\D/g, "");
+    const name = (order.customerName || "").toLowerCase();
+    const nameNoTitle = name.replace(/^(คุณ|นางสาว|น\.ส\.|นาง|นาย|ด\.ญ\.|ด\.ช\.|พี่|น้อง|ช่าง|ลูกค้า)\s*/i, "").trim();
+    const nameNoSpaces = nameNoTitle.replace(/[- \s\t\n]/g, "");
+    const nickname = (order.customerNickname || "").toLowerCase().trim();
+    const lineUid = (order.lineUserId || "").toLowerCase().trim();
+    if (senderUserId && lineUid && lineUid === senderUserId.toLowerCase().trim()) {
+      return true;
+    }
+    for (const pc of phoneCandidates) {
+      if (orderPhone && (orderPhone === pc || orderPhone.includes(pc) || pc.includes(orderPhone))) {
+        return true;
+      }
+    }
+    if (digitsOnly.length >= 7 && orderPhone && (orderPhone.includes(digitsOnly) || digitsOnly.includes(orderPhone))) {
+      return true;
+    }
+    for (const onc of orderNumCandidates) {
+      if (orderNum && (orderNum === onc || orderNum.includes(onc) || onc.includes(orderNum))) return true;
+      if (orderNumDigits && onc.includes(orderNumDigits)) return true;
+    }
+    if (nameNoSpaces.length >= 2 && cleanSearch.includes(nameNoSpaces)) return true;
+    if (nameNoTitle.length >= 2 && lower.includes(nameNoTitle)) return true;
+    const nameParts = nameNoTitle.split(/\s+/).filter((p) => p.length >= 2);
+    for (const part of nameParts) {
+      const cleanPart = part.replace(/[- \s\t\n]/g, "");
+      if (cleanPart.length >= 2 && (cleanSearch.includes(cleanPart) || strippedClean.includes(cleanPart))) {
+        return true;
+      }
+    }
+    if (strippedClean.length >= 2 && nameNoSpaces.includes(strippedClean)) return true;
+    if (strippedText.length >= 2 && nameNoTitle.includes(strippedText)) return true;
+    if (nickname.length >= 2) {
+      if (cleanSearch.includes(nickname) || lower.includes(nickname) || strippedClean.includes(nickname)) {
+        return true;
+      }
+    }
+    return false;
+  });
+  return matched.sort((a, b) => {
+    return (b.orderNumber || "").localeCompare(a.orderNumber || "", void 0, { numeric: true });
+  });
+}
+function formatThaiDate(dateStr) {
+  if (!dateStr) return "-";
+  try {
+    return new Date(dateStr).toLocaleDateString("th-TH", {
+      day: "numeric",
+      month: "long",
+      year: "numeric"
+    });
+  } catch (_) {
+    return dateStr;
+  }
+}
+function formatSingleOrderLineMessage(order, baseAppUrl, userId) {
+  const stCfg = getStatusDetails(order.status);
+  const formattedDelivery = formatThaiDate(order.deliveryDate);
+  const price = Number(order.price || 0);
+  const deposit = Number(order.deposit || 0);
+  const discount = Number(order.discount || 0);
+  const finalPaid = Number(order.finalPaymentAmount || 0);
+  const unpaid = Math.max(0, price - deposit - discount - finalPaid);
+  const cleanBase = (baseAppUrl || "").replace(/\/+$/, "");
+  const searchParam = encodeURIComponent(order.customerPhone || order.orderNumber);
+  const userParam = userId ? `&lineUserId=${encodeURIComponent(userId)}` : "";
+  const portalUrl = `${cleanBase}/?mode=customer&search=${searchParam}${userParam}`;
+  return `\u269C\uFE0F \u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E0A\u0E38\u0E14\u0E2A\u0E31\u0E48\u0E07\u0E15\u0E31\u0E14 NUNUH Boutique \u269C\uFE0F
+
+\u{1F464} \u0E40\u0E23\u0E35\u0E22\u0E19\u0E04\u0E38\u0E13: ${order.customerName}${order.customerNickname ? ` (${order.customerNickname})` : ""}
+\u{1F9FE} \u0E23\u0E2B\u0E31\u0E2A\u0E2D\u0E2D\u0E40\u0E14\u0E2D\u0E23\u0E4C: ${order.orderNumber}
+\u{1F457} \u0E41\u0E1A\u0E1A\u0E0A\u0E38\u0E14: ${order.dressType}
+\u{1F9F5} \u0E0A\u0E19\u0E34\u0E14\u0E1C\u0E49\u0E32/\u0E2A\u0E35: ${order.fabricType || "\u0E15\u0E32\u0E21\u0E17\u0E35\u0E48\u0E23\u0E30\u0E1A\u0E38"} (${order.fabricColor || "-"})
+` + (order.tailorName ? `\u2702\uFE0F \u0E0A\u0E48\u0E32\u0E07\u0E15\u0E31\u0E14\u0E40\u0E22\u0E47\u0E1A: ${order.tailorName}
+
+` : `
+`) + `\u{1F4CD} \u0E2A\u0E16\u0E32\u0E19\u0E30 Real-Time: ${stCfg.icon} [${stCfg.label}]
+\u2139\uFE0F \u0E02\u0E31\u0E49\u0E19\u0E15\u0E2D\u0E19\u0E1B\u0E31\u0E08\u0E08\u0E38\u0E1A\u0E31\u0E19: "${stCfg.desc}"
+\u{1F4C5} \u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E2D\u0E31\u0E1B\u0E40\u0E14\u0E15\u0E2A\u0E16\u0E32\u0E19\u0E30: ${formatThaiDate(order.statusDate || order.orderDate)}
+\u23F3 \u0E01\u0E33\u0E2B\u0E19\u0E14\u0E2A\u0E48\u0E07\u0E21\u0E2D\u0E1A\u0E0A\u0E38\u0E14: ${formattedDelivery}
+
+\u{1F4B0} \u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E22\u0E2D\u0E14\u0E40\u0E07\u0E34\u0E19:
+\u2022 \u0E23\u0E32\u0E04\u0E32\u0E23\u0E27\u0E21: ${price.toLocaleString()} \u0E1A\u0E32\u0E17
+\u2022 \u0E0A\u0E33\u0E23\u0E30\u0E21\u0E31\u0E14\u0E08\u0E33\u0E41\u0E25\u0E49\u0E27: ${deposit.toLocaleString()} \u0E1A\u0E32\u0E17
+` + (unpaid === 0 ? `\u2022 \u0E2A\u0E16\u0E32\u0E19\u0E30\u0E0A\u0E33\u0E23\u0E30: \u0E0A\u0E33\u0E23\u0E30\u0E04\u0E23\u0E1A\u0E16\u0E49\u0E27\u0E19\u0E41\u0E25\u0E49\u0E27 \u2713
+
+` : `\u2022 \u0E22\u0E2D\u0E14\u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D\u0E27\u0E31\u0E19\u0E23\u0E31\u0E1A\u0E0A\u0E38\u0E14: ${unpaid.toLocaleString()} \u0E1A\u0E32\u0E17
+
+`) + `\u{1F517} \u0E15\u0E23\u0E27\u0E08\u0E2A\u0E2D\u0E1A\u0E23\u0E32\u0E22\u0E25\u0E30\u0E40\u0E2D\u0E35\u0E22\u0E14 \u0E2A\u0E31\u0E14\u0E2A\u0E48\u0E27\u0E19\u0E17\u0E35\u0E48\u0E27\u0E31\u0E14 \u0E41\u0E25\u0E30\u0E15\u0E34\u0E14\u0E15\u0E32\u0E21\u0E2A\u0E16\u0E32\u0E19\u0E30\u0E41\u0E1A\u0E1A Real-Time \u0E15\u0E25\u0E2D\u0E14 24 \u0E0A\u0E21.:
+${portalUrl}
+
+\u0E2B\u0E32\u0E01\u0E15\u0E49\u0E2D\u0E07\u0E01\u0E32\u0E23\u0E2A\u0E2D\u0E1A\u0E16\u0E32\u0E21\u0E40\u0E1E\u0E34\u0E48\u0E21\u0E40\u0E15\u0E34\u0E21 \u0E2A\u0E32\u0E21\u0E32\u0E23\u0E16\u0E1E\u0E34\u0E21\u0E1E\u0E4C\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E17\u0E34\u0E49\u0E07\u0E44\u0E27\u0E49\u0E43\u0E19\u0E41\u0E0A\u0E17\u0E19\u0E35\u0E49\u0E44\u0E14\u0E49\u0E40\u0E25\u0E22\u0E19\u0E30\u0E04\u0E30 \u2728`;
+}
+function formatMultipleOrdersLineMessage(matchedOrders, baseAppUrl, userId) {
+  const customerName = matchedOrders[0]?.customerName || "\u0E04\u0E38\u0E13\u0E25\u0E39\u0E01\u0E04\u0E49\u0E32";
+  const customerNickname = matchedOrders[0]?.customerNickname ? ` (${matchedOrders[0]?.customerNickname})` : "";
+  let totalPrice = 0;
+  let totalDeposit = 0;
+  let totalUnpaid = 0;
+  let itemsText = "";
+  matchedOrders.forEach((order, idx) => {
+    const stCfg = getStatusDetails(order.status);
+    const delDate = formatThaiDate(order.deliveryDate);
+    const price = Number(order.price || 0);
+    const deposit = Number(order.deposit || 0);
+    const discount = Number(order.discount || 0);
+    const finalPaid = Number(order.finalPaymentAmount || 0);
+    const unpaid = Math.max(0, price - deposit - discount - finalPaid);
+    totalPrice += price;
+    totalDeposit += deposit;
+    totalUnpaid += unpaid;
+    itemsText += `\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501
+`;
+    itemsText += `\u{1F457} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E17\u0E35\u0E48 ${idx + 1}: ${order.orderNumber} - ${order.dressType}
+`;
+    itemsText += `\u2022 \u0E1C\u0E49\u0E32/\u0E2A\u0E35: ${order.fabricType || "\u0E15\u0E32\u0E21\u0E17\u0E35\u0E48\u0E23\u0E30\u0E1A\u0E38"} (${order.fabricColor || "-"})
+`;
+    itemsText += `\u2022 \u0E2A\u0E16\u0E32\u0E19\u0E30: ${stCfg.icon} [${stCfg.label}]
+`;
+    itemsText += `  \u21B3 "${stCfg.desc}"
+`;
+    itemsText += `\u2022 \u0E01\u0E33\u0E2B\u0E19\u0E14\u0E2A\u0E48\u0E07\u0E21\u0E2D\u0E1A: ${delDate}
+`;
+    itemsText += `\u2022 \u0E23\u0E32\u0E04\u0E32: ${price.toLocaleString()} \u0E1A. | \u0E21\u0E31\u0E14\u0E08\u0E33: ${deposit.toLocaleString()} \u0E1A. | \u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D: ${unpaid.toLocaleString()} \u0E1A.
+`;
+  });
+  const cleanBase = (baseAppUrl || "").replace(/\/+$/, "");
+  const searchParam = encodeURIComponent(matchedOrders[0].customerPhone || matchedOrders[0].orderNumber);
+  const userParam = userId ? `&lineUserId=${encodeURIComponent(userId)}` : "";
+  const portalUrl = `${cleanBase}/?mode=customer&search=${searchParam}${userParam}`;
+  return `\u269C\uFE0F NUNUH Boutique - \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E2D\u0E2D\u0E40\u0E14\u0E2D\u0E23\u0E4C\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14 \u269C\uFE0F
+
+\u{1F464} \u0E40\u0E23\u0E35\u0E22\u0E19\u0E04\u0E38\u0E13: ${customerName}${customerNickname}
+\u{1F4E6} \u0E1E\u0E1A\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E2A\u0E31\u0E48\u0E07\u0E15\u0E31\u0E14\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14 ${matchedOrders.length} \u0E2D\u0E2D\u0E40\u0E14\u0E2D\u0E23\u0E4C \u0E14\u0E31\u0E07\u0E19\u0E35\u0E49\u0E04\u0E48\u0E30:
+
+${itemsText}\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501
+
+\u{1F4CA} \u0E2A\u0E23\u0E38\u0E1B\u0E22\u0E2D\u0E14\u0E23\u0E27\u0E21\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14 (${matchedOrders.length} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23):
+\u2022 \u0E23\u0E27\u0E21\u0E21\u0E39\u0E25\u0E04\u0E48\u0E32\u0E0A\u0E38\u0E14: ${totalPrice.toLocaleString()} \u0E1A\u0E32\u0E17
+\u2022 \u0E0A\u0E33\u0E23\u0E30\u0E21\u0E31\u0E14\u0E08\u0E33\u0E23\u0E27\u0E21: ${totalDeposit.toLocaleString()} \u0E1A\u0E32\u0E17
+` + (totalUnpaid === 0 ? `\u2022 \u0E2A\u0E16\u0E32\u0E19\u0E30\u0E0A\u0E33\u0E23\u0E30: \u0E0A\u0E33\u0E23\u0E30\u0E04\u0E23\u0E1A\u0E16\u0E49\u0E27\u0E19\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14\u0E41\u0E25\u0E49\u0E27 \u2713
+
+` : `\u2022 \u0E22\u0E2D\u0E14\u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D\u0E2A\u0E38\u0E17\u0E18\u0E34\u0E27\u0E31\u0E19\u0E23\u0E31\u0E1A\u0E0A\u0E38\u0E14: ${totalUnpaid.toLocaleString()} \u0E1A\u0E32\u0E17
+
+`) + `\u{1F517} \u0E40\u0E1B\u0E34\u0E14\u0E14\u0E39\u0E23\u0E32\u0E22\u0E25\u0E30\u0E40\u0E2D\u0E35\u0E22\u0E14 \u0E2A\u0E31\u0E14\u0E2A\u0E48\u0E27\u0E19 \u0E23\u0E39\u0E1B\u0E20\u0E32\u0E1E\u0E41\u0E1A\u0E1A\u0E0A\u0E38\u0E14 \u0E41\u0E25\u0E30\u0E15\u0E34\u0E14\u0E15\u0E32\u0E21\u0E2A\u0E16\u0E32\u0E19\u0E30\u0E17\u0E38\u0E01\u0E0A\u0E38\u0E14\u0E41\u0E1A\u0E1A Real-Time \u0E44\u0E14\u0E49\u0E17\u0E35\u0E48\u0E19\u0E35\u0E48\u0E04\u0E48\u0E30:
+${portalUrl}
+
+\u0E02\u0E2D\u0E1A\u0E1E\u0E23\u0E30\u0E04\u0E38\u0E13\u0E17\u0E35\u0E48\u0E44\u0E27\u0E49\u0E27\u0E32\u0E07\u0E43\u0E08\u0E43\u0E2B\u0E49\u0E2B\u0E49\u0E2D\u0E07\u0E40\u0E2A\u0E37\u0E49\u0E2D NUNUH \u0E14\u0E39\u0E41\u0E25\u0E0A\u0E38\u0E14\u0E2A\u0E27\u0E22\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13\u0E04\u0E48\u0E30 \u{1F496}\u2728`;
+}
+function formatCustomerOrdersReport(matchedOrders, baseAppUrl, userId) {
+  if (!matchedOrders || matchedOrders.length === 0) return "";
+  if (matchedOrders.length === 1) {
+    return formatSingleOrderLineMessage(matchedOrders[0], baseAppUrl, userId);
+  }
+  return formatMultipleOrdersLineMessage(matchedOrders, baseAppUrl, userId);
+}
+function buildOrdersLineFlexMessage(matchedOrders, baseAppUrl, userId) {
+  if (!matchedOrders || matchedOrders.length === 0) return null;
+  const cleanBase = (baseAppUrl || "").replace(/\/+$/, "");
+  const searchParam = encodeURIComponent(matchedOrders[0].customerPhone || matchedOrders[0].orderNumber);
+  const userParam = userId ? `&lineUserId=${encodeURIComponent(userId)}` : "";
+  const portalUrl = `${cleanBase}/?mode=customer&search=${searchParam}${userParam}`;
+  const bubbles = matchedOrders.slice(0, 10).map((order, idx) => {
+    const stCfg = getStatusDetails(order.status);
+    const delDate = formatThaiDate(order.deliveryDate);
+    const price = Number(order.price || 0);
+    const deposit = Number(order.deposit || 0);
+    const discount = Number(order.discount || 0);
+    const finalPaid = Number(order.finalPaymentAmount || 0);
+    const unpaid = Math.max(0, price - deposit - discount - finalPaid);
+    const singleOrderUrl = `${cleanBase}/?mode=customer&search=${encodeURIComponent(order.orderNumber)}${userParam}`;
+    return {
+      type: "bubble",
+      size: "kilo",
+      header: {
+        type: "box",
+        layout: "vertical",
+        backgroundColor: "#211C1A",
+        paddingAll: "14px",
+        contents: [
+          {
+            type: "box",
+            layout: "horizontal",
+            contents: [
+              {
+                type: "text",
+                text: "\u269C\uFE0F NUNUH BOUTIQUE",
+                weight: "bold",
+                color: "#D4AF37",
+                size: "xs",
+                flex: 1
+              },
+              {
+                type: "text",
+                text: matchedOrders.length > 1 ? `#${idx + 1} \u0E08\u0E32\u0E01 ${matchedOrders.length}` : "\u0E2D\u0E2D\u0E40\u0E14\u0E2D\u0E23\u0E4C\u0E2A\u0E31\u0E48\u0E07\u0E15\u0E31\u0E14",
+                color: "#E2D9D0",
+                size: "xxs",
+                align: "end"
+              }
+            ]
+          }
+        ]
+      },
+      body: {
+        type: "box",
+        layout: "vertical",
+        paddingAll: "16px",
+        spacing: "md",
+        contents: [
+          {
+            type: "box",
+            layout: "horizontal",
+            contents: [
+              {
+                type: "text",
+                text: order.orderNumber || "NU-ORDER",
+                weight: "bold",
+                size: "lg",
+                color: "#211C1A",
+                flex: 1
+              },
+              {
+                type: "box",
+                layout: "horizontal",
+                backgroundColor: stCfg.badgeColor,
+                cornerRadius: "8px",
+                paddingStart: "8px",
+                paddingEnd: "8px",
+                paddingTop: "2px",
+                paddingBottom: "2px",
+                contents: [
+                  {
+                    type: "text",
+                    text: stCfg.label.split(". ")[1] || stCfg.label,
+                    color: "#FFFFFF",
+                    size: "xxs",
+                    weight: "bold"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            type: "text",
+            text: order.dressType || "\u0E0A\u0E38\u0E14\u0E2A\u0E31\u0E48\u0E07\u0E15\u0E31\u0E14\u0E1E\u0E34\u0E40\u0E28\u0E29",
+            weight: "bold",
+            size: "sm",
+            color: "#8B5E3C",
+            wrap: true
+          },
+          {
+            type: "separator",
+            margin: "sm",
+            color: "#F0EAE1"
+          },
+          {
+            type: "box",
+            layout: "vertical",
+            spacing: "xs",
+            margin: "sm",
+            contents: [
+              {
+                type: "box",
+                layout: "horizontal",
+                contents: [
+                  { type: "text", text: "\u{1F464} \u0E25\u0E39\u0E01\u0E04\u0E49\u0E32", size: "xxs", color: "#8E8882", width: "70px" },
+                  { type: "text", text: order.customerName || "-", size: "xxs", color: "#211C1A", weight: "bold", wrap: true }
+                ]
+              },
+              {
+                type: "box",
+                layout: "horizontal",
+                contents: [
+                  { type: "text", text: "\u{1F9F5} \u0E0A\u0E19\u0E34\u0E14\u0E1C\u0E49\u0E32", size: "xxs", color: "#8E8882", width: "70px" },
+                  { type: "text", text: `${order.fabricType || "-"} (${order.fabricColor || "-"})`, size: "xxs", color: "#211C1A", wrap: true }
+                ]
+              },
+              {
+                type: "box",
+                layout: "horizontal",
+                contents: [
+                  { type: "text", text: "\u23F3 \u0E01\u0E33\u0E2B\u0E19\u0E14\u0E2A\u0E48\u0E07", size: "xxs", color: "#8E8882", width: "70px" },
+                  { type: "text", text: delDate, size: "xxs", color: "#D97706", weight: "bold" }
+                ]
+              },
+              {
+                type: "box",
+                layout: "horizontal",
+                contents: [
+                  { type: "text", text: "\u{1F4B0} \u0E22\u0E2D\u0E14\u0E40\u0E07\u0E34\u0E19", size: "xxs", color: "#8E8882", width: "70px" },
+                  {
+                    type: "text",
+                    text: unpaid === 0 ? "\u0E0A\u0E33\u0E23\u0E30\u0E04\u0E23\u0E1A\u0E41\u0E25\u0E49\u0E27 \u2713" : `\u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D ${unpaid.toLocaleString()} \u0E1A.`,
+                    size: "xxs",
+                    color: unpaid === 0 ? "#059669" : "#DC2626",
+                    weight: "bold"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      footer: {
+        type: "box",
+        layout: "vertical",
+        paddingAll: "12px",
+        spacing: "xs",
+        contents: [
+          {
+            type: "button",
+            style: "primary",
+            color: "#8B5E3C",
+            height: "sm",
+            action: {
+              type: "uri",
+              label: "\u{1F50D} \u0E14\u0E39\u0E2A\u0E31\u0E14\u0E2A\u0E48\u0E27\u0E19 & \u0E15\u0E34\u0E14\u0E15\u0E32\u0E21 Real-Time",
+              uri: singleOrderUrl
+            }
+          }
+        ]
+      }
+    };
+  });
+  if (bubbles.length === 1) {
+    return {
+      type: "flex",
+      altText: `\u269C\uFE0F \u0E2D\u0E31\u0E1B\u0E40\u0E14\u0E15\u0E2D\u0E2D\u0E40\u0E14\u0E2D\u0E23\u0E4C ${matchedOrders[0].orderNumber} (${matchedOrders[0].dressType})`,
+      contents: bubbles[0]
+    };
+  }
+  return {
+    type: "flex",
+    altText: `\u269C\uFE0F \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E2D\u0E2D\u0E40\u0E14\u0E2D\u0E23\u0E4C\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14 ${matchedOrders.length} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23 (NUNUH Boutique)`,
+    contents: {
+      type: "carousel",
+      contents: bubbles
+    }
+  };
+}
+function formatOrderNotFoundMessage(originalText) {
+  return `\u0E2A\u0E27\u0E31\u0E2A\u0E14\u0E35\u0E04\u0E48\u0E30\u0E04\u0E38\u0E13\u0E25\u0E39\u0E01\u0E04\u0E49\u0E32 \u269C\uFE0F NUNUH Boutique \u269C\uFE0F \u0E22\u0E34\u0E19\u0E14\u0E35\u0E43\u0E2B\u0E49\u0E1A\u0E23\u0E34\u0E01\u0E32\u0E23\u0E04\u0E48\u0E30
+
+\u274C \u0E02\u0E2D\u0E2D\u0E20\u0E31\u0E22\u0E04\u0E48\u0E30 \u0E23\u0E30\u0E1A\u0E1A\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E2D\u0E2D\u0E40\u0E14\u0E2D\u0E23\u0E4C\u0E17\u0E35\u0E48\u0E15\u0E23\u0E07\u0E01\u0E31\u0E1A "${originalText}"
+
+\u{1F4CC} \u0E27\u0E34\u0E18\u0E35\u0E01\u0E32\u0E23\u0E15\u0E23\u0E27\u0E08\u0E2A\u0E2D\u0E1A\u0E2A\u0E16\u0E32\u0E19\u0E30\u0E2D\u0E2D\u0E40\u0E14\u0E2D\u0E23\u0E4C\u0E2D\u0E31\u0E15\u0E42\u0E19\u0E21\u0E31\u0E15\u0E34:
+\u2022 \u0E1E\u0E34\u0E21\u0E1E\u0E4C \u0E40\u0E1A\u0E2D\u0E23\u0E4C\u0E42\u0E17\u0E23\u0E28\u0E31\u0E1E\u0E17\u0E4C \u0E17\u0E35\u0E48\u0E41\u0E08\u0E49\u0E07\u0E44\u0E27\u0E49\u0E15\u0E2D\u0E19\u0E27\u0E31\u0E14\u0E15\u0E31\u0E27 (\u0E40\u0E0A\u0E48\u0E19 0801462230 \u0E2B\u0E23\u0E37\u0E2D 086-555-1234)
+\u2022 \u0E2B\u0E23\u0E37\u0E2D\u0E1E\u0E34\u0E21\u0E1E\u0E4C \u0E0A\u0E37\u0E48\u0E2D-\u0E19\u0E32\u0E21\u0E2A\u0E01\u0E38\u0E25 \u0E02\u0E2D\u0E07\u0E17\u0E48\u0E32\u0E19
+\u2022 \u0E2B\u0E23\u0E37\u0E2D\u0E1E\u0E34\u0E21\u0E1E\u0E4C \u0E23\u0E2B\u0E31\u0E2A\u0E2D\u0E2D\u0E40\u0E14\u0E2D\u0E23\u0E4C (\u0E40\u0E0A\u0E48\u0E19 NU-26002 \u0E2B\u0E23\u0E37\u0E2D 26002)
+
+\u0E23\u0E30\u0E1A\u0E1A\u0E08\u0E30\u0E04\u0E49\u0E19\u0E2B\u0E32\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E41\u0E25\u0E30\u0E2A\u0E48\u0E07\u0E23\u0E32\u0E22\u0E07\u0E32\u0E19\u0E2D\u0E2D\u0E40\u0E14\u0E2D\u0E23\u0E4C\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14 \u0E1E\u0E23\u0E49\u0E2D\u0E21\u0E25\u0E34\u0E07\u0E01\u0E4C\u0E15\u0E34\u0E14\u0E15\u0E32\u0E21\u0E07\u0E32\u0E19\u0E43\u0E2B\u0E49\u0E17\u0E48\u0E32\u0E19\u0E15\u0E23\u0E27\u0E08\u0E2A\u0E2D\u0E1A\u0E2A\u0E31\u0E14\u0E2A\u0E48\u0E27\u0E19 \u0E41\u0E25\u0E30\u0E04\u0E27\u0E32\u0E21\u0E04\u0E37\u0E1A\u0E2B\u0E19\u0E49\u0E32\u0E41\u0E1A\u0E1A Real-Time \u0E44\u0E14\u0E49\u0E17\u0E31\u0E19\u0E17\u0E35\u0E15\u0E25\u0E2D\u0E14 24 \u0E0A\u0E21. \u0E40\u0E25\u0E22\u0E19\u0E30\u0E04\u0E30 \u2728`;
+}
+function formatNewOrderCustomerConfirmation(order, baseAppUrl) {
+  const formattedDelivery = formatThaiDate(order.deliveryDate);
+  const cleanBase = (baseAppUrl || "").replace(/\/+$/, "");
+  const searchParam = encodeURIComponent(order.customerPhone || order.orderNumber);
+  const userParam = order.lineUserId ? `&lineUserId=${encodeURIComponent(order.lineUserId)}` : "";
+  const portalUrl = `${cleanBase}/?mode=customer&search=${searchParam}${userParam}`;
+  return `\u269C\uFE0F \u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E01\u0E32\u0E23\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E2D\u0E2D\u0E40\u0E14\u0E2D\u0E23\u0E4C\u0E2A\u0E31\u0E48\u0E07\u0E15\u0E31\u0E14 NUNUH Boutique \u269C\uFE0F
+
+\u{1F464} \u0E40\u0E23\u0E35\u0E22\u0E19\u0E04\u0E38\u0E13: ${order.customerName}${order.customerNickname ? ` (${order.customerNickname})` : ""}
+\u{1F9FE} \u0E23\u0E2B\u0E31\u0E2A\u0E2D\u0E2D\u0E40\u0E14\u0E2D\u0E23\u0E4C: ${order.orderNumber}
+\u{1F457} \u0E41\u0E1A\u0E1A\u0E0A\u0E38\u0E14: ${order.dressType}
+\u{1F9F5} \u0E0A\u0E19\u0E34\u0E14\u0E1C\u0E49\u0E32: ${order.fabricType || "\u0E15\u0E32\u0E21\u0E17\u0E35\u0E48\u0E23\u0E30\u0E1A\u0E38"} (${order.fabricColor || "-"})
+\u{1F4CD} \u0E2A\u0E16\u0E32\u0E19\u0E30: [1. \u0E23\u0E31\u0E1A\u0E2D\u0E2D\u0E40\u0E14\u0E2D\u0E23\u0E4C\u0E40\u0E23\u0E35\u0E22\u0E1A\u0E23\u0E49\u0E2D\u0E22]
+\u{1F4C5} \u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01: ${formatThaiDate(order.orderDate || (/* @__PURE__ */ new Date()).toISOString().split("T")[0])}
+\u23F3 \u0E01\u0E33\u0E2B\u0E19\u0E14\u0E2A\u0E48\u0E07\u0E21\u0E2D\u0E1A: ${formattedDelivery}
+
+\u{1F4B0} \u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E22\u0E2D\u0E14\u0E40\u0E07\u0E34\u0E19:
+\u2022 \u0E23\u0E32\u0E04\u0E32\u0E23\u0E27\u0E21: ${Number(order.price || 0).toLocaleString()} \u0E1A\u0E32\u0E17
+\u2022 \u0E0A\u0E33\u0E23\u0E30\u0E21\u0E31\u0E14\u0E08\u0E33\u0E41\u0E25\u0E49\u0E27: ${Number(order.deposit || 0).toLocaleString()} \u0E1A\u0E32\u0E17
+\u2022 \u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D\u0E27\u0E31\u0E19\u0E23\u0E31\u0E1A\u0E0A\u0E38\u0E14: ${Math.max(0, Number(order.price || 0) - Number(order.deposit || 0) - Number(order.discount || 0)).toLocaleString()} \u0E1A\u0E32\u0E17
+
+\u{1F517} \u0E15\u0E34\u0E14\u0E15\u0E32\u0E21\u0E2A\u0E16\u0E32\u0E19\u0E30\u0E07\u0E32\u0E19\u0E15\u0E31\u0E14\u0E40\u0E22\u0E47\u0E1A \u0E2A\u0E31\u0E14\u0E2A\u0E48\u0E27\u0E19\u0E17\u0E35\u0E48\u0E27\u0E31\u0E14 \u0E41\u0E25\u0E30\u0E20\u0E32\u0E1E\u0E41\u0E1A\u0E1A\u0E0A\u0E38\u0E14\u0E44\u0E14\u0E49\u0E17\u0E35\u0E48\u0E25\u0E34\u0E07\u0E01\u0E4C\u0E19\u0E35\u0E49\u0E15\u0E25\u0E2D\u0E14 24 \u0E0A\u0E21.:
+${portalUrl}
+
+\u0E02\u0E2D\u0E1A\u0E1E\u0E23\u0E30\u0E04\u0E38\u0E13\u0E17\u0E35\u0E48\u0E44\u0E27\u0E49\u0E27\u0E32\u0E07\u0E43\u0E08\u0E43\u0E2B\u0E49\u0E2B\u0E49\u0E2D\u0E07\u0E40\u0E2A\u0E37\u0E49\u0E2D NUNUH \u0E14\u0E39\u0E41\u0E25\u0E0A\u0E38\u0E14\u0E2A\u0E27\u0E22\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13\u0E04\u0E48\u0E30 \u{1F496}\u2728`;
+}
+function formatNewOrderOwnerAlert(order, baseAppUrl) {
+  const cleanBase = (baseAppUrl || "").replace(/\/+$/, "");
+  const searchParam = encodeURIComponent(order.customerPhone || order.orderNumber);
+  const portalUrl = `${cleanBase}/?mode=customer&search=${searchParam}`;
+  return `\u{1F514} [\u0E41\u0E08\u0E49\u0E07\u0E40\u0E15\u0E37\u0E2D\u0E19\u0E23\u0E49\u0E32\u0E19] \u0E21\u0E35\u0E2D\u0E2D\u0E40\u0E14\u0E2D\u0E23\u0E4C\u0E2A\u0E31\u0E48\u0E07\u0E15\u0E31\u0E14\u0E43\u0E2B\u0E21\u0E48\u0E40\u0E02\u0E49\u0E32\u0E21\u0E32\u0E43\u0E19\u0E23\u0E30\u0E1A\u0E1A!
+
+\u{1F9FE} \u0E23\u0E2B\u0E31\u0E2A\u0E2D\u0E2D\u0E40\u0E14\u0E2D\u0E23\u0E4C: ${order.orderNumber}
+\u{1F464} \u0E25\u0E39\u0E01\u0E04\u0E49\u0E32: ${order.customerName}
+\u{1F4DE} \u0E40\u0E1A\u0E2D\u0E23\u0E4C\u0E42\u0E17\u0E23: ${order.customerPhone || "-"}
+\u{1F457} \u0E41\u0E1A\u0E1A\u0E0A\u0E38\u0E14: ${order.dressType}
+\u{1F4B0} \u0E23\u0E32\u0E04\u0E32\u0E23\u0E27\u0E21: ${Number(order.price || 0).toLocaleString()} \u0E1A\u0E32\u0E17 (\u0E21\u0E31\u0E14\u0E08\u0E33: ${Number(order.deposit || 0).toLocaleString()} \u0E1A.)
+\u23F3 \u0E01\u0E33\u0E2B\u0E19\u0E14\u0E2A\u0E48\u0E07: ${formatThaiDate(order.deliveryDate)}
+\u{1F4CD} \u0E2A\u0E32\u0E02\u0E32: ${order.branch || "\u0E2A\u0E32\u0E02\u0E32\u0E2B\u0E25\u0E31\u0E01"}
+\u{1F464} \u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E42\u0E14\u0E22: ${order.staffName || "\u0E1E\u0E19\u0E31\u0E01\u0E07\u0E32\u0E19"}
+
+\u{1F517} \u0E25\u0E34\u0E07\u0E01\u0E4C\u0E15\u0E23\u0E27\u0E08\u0E2D\u0E2D\u0E40\u0E14\u0E2D\u0E23\u0E4C: ${portalUrl}`;
+}
+
 // server.ts
 dotenv2.config();
 var app = express();
@@ -514,32 +1110,6 @@ var CATALOGUE_FILE = path.join(process.cwd(), "catalogue.json");
 var SETTINGS_FILE = path.join(process.cwd(), "settings.json");
 var REVIEWS_FILE = path.join(process.cwd(), "reviews.json");
 var lastKnownPublicUrl = "";
-var STATUS_MAP_TH = {
-  RECEIVED: { label: "1. \u0E23\u0E31\u0E1A\u0E2D\u0E2D\u0E40\u0E14\u0E2D\u0E23\u0E4C\u0E40\u0E23\u0E35\u0E22\u0E1A\u0E23\u0E49\u0E2D\u0E22", desc: "\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E41\u0E25\u0E30\u0E2A\u0E31\u0E14\u0E2A\u0E48\u0E27\u0E19\u0E40\u0E02\u0E49\u0E32\u0E23\u0E30\u0E1A\u0E1A\u0E40\u0E23\u0E35\u0E22\u0E1A\u0E23\u0E49\u0E2D\u0E22\u0E41\u0E25\u0E49\u0E27" },
-  DESIGNING: { label: "2. \u0E2A\u0E23\u0E38\u0E1B\u0E41\u0E1A\u0E1A/\u0E40\u0E15\u0E23\u0E35\u0E22\u0E21\u0E1C\u0E49\u0E32", desc: "\u0E27\u0E32\u0E07\u0E41\u0E1E\u0E17\u0E40\u0E17\u0E34\u0E23\u0E4C\u0E19 \u0E2D\u0E2D\u0E01\u0E41\u0E1A\u0E1A \u0E41\u0E25\u0E30\u0E40\u0E15\u0E23\u0E35\u0E22\u0E21\u0E1C\u0E49\u0E32\u0E15\u0E31\u0E14\u0E40\u0E22\u0E47\u0E1A" },
-  FABRIC_ORDERED: { label: "\u0E2A\u0E31\u0E48\u0E07\u0E1C\u0E49\u0E32/\u0E2D\u0E30\u0E44\u0E2B\u0E25\u0E48", desc: "\u0E2D\u0E22\u0E39\u0E48\u0E23\u0E30\u0E2B\u0E27\u0E48\u0E32\u0E07\u0E23\u0E2D\u0E1C\u0E49\u0E32\u0E2B\u0E23\u0E37\u0E2D\u0E2D\u0E38\u0E1B\u0E01\u0E23\u0E13\u0E4C\u0E2A\u0E31\u0E48\u0E07\u0E1E\u0E34\u0E40\u0E28\u0E29" },
-  FABRIC_RECEIVED: { label: "\u0E44\u0E14\u0E49\u0E23\u0E31\u0E1A\u0E1C\u0E49\u0E32\u0E41\u0E25\u0E49\u0E27", desc: "\u0E1C\u0E49\u0E32\u0E41\u0E25\u0E30\u0E2D\u0E38\u0E1B\u0E01\u0E23\u0E13\u0E4C\u0E08\u0E31\u0E14\u0E40\u0E15\u0E23\u0E35\u0E22\u0E21\u0E04\u0E23\u0E1A\u0E16\u0E49\u0E27\u0E19 \u0E1E\u0E23\u0E49\u0E2D\u0E21\u0E02\u0E36\u0E49\u0E19\u0E41\u0E1A\u0E1A" },
-  PATTERN_MAKING: { label: "\u0E2A\u0E23\u0E49\u0E32\u0E07\u0E41\u0E1E\u0E17\u0E40\u0E17\u0E34\u0E23\u0E4C\u0E19", desc: "\u0E2A\u0E23\u0E49\u0E32\u0E07\u0E41\u0E1A\u0E1A\u0E41\u0E1E\u0E17\u0E40\u0E17\u0E34\u0E23\u0E4C\u0E19\u0E15\u0E32\u0E21\u0E2A\u0E31\u0E14\u0E2A\u0E48\u0E27\u0E19\u0E40\u0E09\u0E1E\u0E32\u0E30\u0E1A\u0E38\u0E04\u0E04\u0E25" },
-  CUTTING: { label: "3. \u0E02\u0E36\u0E49\u0E19\u0E41\u0E1A\u0E1A\u0E41\u0E25\u0E30\u0E15\u0E31\u0E14\u0E1C\u0E49\u0E32", desc: "\u0E0A\u0E48\u0E32\u0E07\u0E15\u0E31\u0E14\u0E1C\u0E49\u0E32\u0E15\u0E32\u0E21\u0E41\u0E1E\u0E17\u0E40\u0E17\u0E34\u0E23\u0E4C\u0E19\u0E40\u0E23\u0E35\u0E22\u0E1A\u0E23\u0E49\u0E2D\u0E22\u0E41\u0E25\u0E49\u0E27" },
-  SEWING: { label: "4. \u0E01\u0E33\u0E25\u0E31\u0E07\u0E40\u0E22\u0E47\u0E1A\u0E1B\u0E23\u0E30\u0E01\u0E2D\u0E1A", desc: "\u0E0A\u0E48\u0E32\u0E07\u0E01\u0E33\u0E25\u0E31\u0E07\u0E40\u0E22\u0E47\u0E1A\u0E02\u0E36\u0E49\u0E19\u0E42\u0E04\u0E23\u0E07\u0E0A\u0E38\u0E14\u0E41\u0E25\u0E30\u0E40\u0E01\u0E47\u0E1A\u0E23\u0E32\u0E22\u0E25\u0E30\u0E40\u0E2D\u0E35\u0E22\u0E14" },
-  PATTERN_SEWING: { label: "\u0E17\u0E33\u0E41\u0E1E\u0E17\u0E40\u0E17\u0E34\u0E23\u0E4C\u0E19/\u0E15\u0E31\u0E14\u0E40\u0E22\u0E47\u0E1A", desc: "\u0E01\u0E33\u0E25\u0E31\u0E07\u0E2A\u0E23\u0E49\u0E32\u0E07\u0E41\u0E1E\u0E17\u0E40\u0E17\u0E34\u0E23\u0E4C\u0E19\u0E41\u0E25\u0E30\u0E40\u0E22\u0E47\u0E1A\u0E1B\u0E23\u0E30\u0E01\u0E2D\u0E1A\u0E0A\u0E38\u0E14" },
-  FIRST_FITTING_READY: { label: "\u0E1E\u0E23\u0E49\u0E2D\u0E21\u0E25\u0E2D\u0E07\u0E42\u0E04\u0E23\u0E07\u0E0A\u0E38\u0E14", desc: "\u0E42\u0E04\u0E23\u0E07\u0E0A\u0E38\u0E14\u0E1E\u0E23\u0E49\u0E2D\u0E21\u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E01\u0E32\u0E23\u0E25\u0E2D\u0E07\u0E42\u0E04\u0E23\u0E07\u0E04\u0E23\u0E31\u0E49\u0E07\u0E17\u0E35\u0E48 1" },
-  FIRST_FITTING_DONE: { label: "\u0E25\u0E2D\u0E07\u0E42\u0E04\u0E23\u0E07\u0E40\u0E23\u0E35\u0E22\u0E1A\u0E23\u0E49\u0E2D\u0E22", desc: "\u0E1B\u0E23\u0E31\u0E1A\u0E41\u0E01\u0E49\u0E2A\u0E31\u0E14\u0E2A\u0E48\u0E27\u0E19\u0E15\u0E32\u0E21\u0E1C\u0E25\u0E01\u0E32\u0E23\u0E25\u0E2D\u0E07\u0E42\u0E04\u0E23\u0E07\u0E0A\u0E38\u0E14" },
-  SECOND_FITTING_READY: { label: "\u0E1E\u0E23\u0E49\u0E2D\u0E21\u0E25\u0E2D\u0E07\u0E40\u0E01\u0E47\u0E1A\u0E17\u0E23\u0E07", desc: "\u0E0A\u0E38\u0E14\u0E1E\u0E23\u0E49\u0E2D\u0E21\u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E01\u0E32\u0E23\u0E25\u0E2D\u0E07\u0E40\u0E01\u0E47\u0E1A\u0E17\u0E23\u0E07\u0E04\u0E23\u0E31\u0E49\u0E07\u0E17\u0E35\u0E48 2" },
-  SECOND_FITTING_DONE: { label: "\u0E25\u0E2D\u0E07\u0E40\u0E01\u0E47\u0E1A\u0E17\u0E23\u0E07\u0E40\u0E23\u0E35\u0E22\u0E1A\u0E23\u0E49\u0E2D\u0E22", desc: "\u0E1B\u0E23\u0E31\u0E1A\u0E41\u0E15\u0E48\u0E07\u0E2A\u0E31\u0E14\u0E2A\u0E48\u0E27\u0E19\u0E23\u0E2D\u0E1A\u0E2A\u0E38\u0E14\u0E17\u0E49\u0E32\u0E22\u0E01\u0E48\u0E2D\u0E19\u0E40\u0E01\u0E47\u0E1A\u0E23\u0E32\u0E22\u0E25\u0E30\u0E40\u0E2D\u0E35\u0E22\u0E14" },
-  EMBROIDERY: { label: "\u0E07\u0E32\u0E19\u0E1B\u0E31\u0E01/\u0E25\u0E39\u0E01\u0E44\u0E21\u0E49", desc: "\u0E2D\u0E22\u0E39\u0E48\u0E23\u0E30\u0E2B\u0E27\u0E48\u0E32\u0E07\u0E07\u0E32\u0E19\u0E1B\u0E31\u0E01 \u0E1B\u0E23\u0E30\u0E14\u0E31\u0E1A\u0E04\u0E23\u0E34\u0E2A\u0E15\u0E31\u0E25 \u0E2B\u0E23\u0E37\u0E2D\u0E15\u0E34\u0E14\u0E25\u0E39\u0E01\u0E44\u0E21\u0E49" },
-  HAND_FINISHING: { label: "\u0E2A\u0E2D\u0E22\u0E21\u0E37\u0E2D/\u0E40\u0E01\u0E47\u0E1A\u0E23\u0E34\u0E21", desc: "\u0E40\u0E01\u0E47\u0E1A\u0E23\u0E32\u0E22\u0E25\u0E30\u0E40\u0E2D\u0E35\u0E22\u0E14\u0E14\u0E49\u0E27\u0E22\u0E21\u0E37\u0E2D\u0E41\u0E25\u0E30\u0E07\u0E32\u0E19\u0E1D\u0E35\u0E21\u0E37\u0E2D\u0E1B\u0E23\u0E30\u0E13\u0E35\u0E15" },
-  FITTING: { label: "5. \u0E02\u0E31\u0E49\u0E19\u0E15\u0E2D\u0E19\u0E1F\u0E34\u0E15\u0E15\u0E34\u0E49\u0E07", desc: "\u0E19\u0E31\u0E14\u0E2B\u0E21\u0E32\u0E22\u0E25\u0E2D\u0E07\u0E0A\u0E38\u0E14\u0E41\u0E25\u0E30\u0E1B\u0E23\u0E31\u0E1A\u0E41\u0E15\u0E48\u0E07\u0E17\u0E23\u0E07\u0E15\u0E32\u0E21\u0E23\u0E39\u0E1B\u0E23\u0E48\u0E32\u0E07" },
-  ALTERING: { label: "\u0E1B\u0E23\u0E31\u0E1A\u0E41\u0E01\u0E49\u0E17\u0E23\u0E07", desc: "\u0E0A\u0E48\u0E32\u0E07\u0E01\u0E33\u0E25\u0E31\u0E07\u0E1B\u0E23\u0E31\u0E1A\u0E41\u0E01\u0E49\u0E2A\u0E31\u0E14\u0E2A\u0E48\u0E27\u0E19\u0E15\u0E32\u0E21\u0E17\u0E35\u0E48\u0E19\u0E31\u0E14\u0E1F\u0E34\u0E15\u0E15\u0E34\u0E49\u0E07" },
-  VERIFY_DETAILS: { label: "\u0E15\u0E23\u0E27\u0E08\u0E2A\u0E2D\u0E1A\u0E23\u0E32\u0E22\u0E25\u0E30\u0E40\u0E2D\u0E35\u0E22\u0E14", desc: "\u0E15\u0E23\u0E27\u0E08\u0E2A\u0E2D\u0E1A\u0E04\u0E27\u0E32\u0E21\u0E16\u0E39\u0E01\u0E15\u0E49\u0E2D\u0E07\u0E02\u0E2D\u0E07\u0E41\u0E1A\u0E1A\u0E0A\u0E38\u0E14\u0E41\u0E25\u0E30\u0E2A\u0E31\u0E14\u0E2A\u0E48\u0E27\u0E19" },
-  QUALITY_CHECK: { label: "\u0E15\u0E23\u0E27\u0E08\u0E40\u0E0A\u0E47\u0E01\u0E04\u0E38\u0E13\u0E20\u0E32\u0E1E (QC)", desc: "\u0E15\u0E23\u0E27\u0E08\u0E2A\u0E2D\u0E1A\u0E04\u0E27\u0E32\u0E21\u0E1B\u0E23\u0E30\u0E13\u0E35\u0E15\u0E02\u0E2D\u0E07\u0E15\u0E30\u0E40\u0E02\u0E47\u0E1A \u0E0B\u0E34\u0E1B \u0E41\u0E25\u0E30\u0E17\u0E23\u0E07\u0E0A\u0E38\u0E14" },
-  IRONING_PACKING: { label: "\u0E23\u0E35\u0E14\u0E2D\u0E31\u0E14\u0E41\u0E25\u0E30\u0E41\u0E1E\u0E47\u0E01\u0E0A\u0E38\u0E14", desc: "\u0E23\u0E35\u0E14\u0E44\u0E2D\u0E19\u0E49\u0E33\u0E08\u0E31\u0E14\u0E17\u0E23\u0E07\u0E0A\u0E38\u0E14\u0E41\u0E25\u0E30\u0E41\u0E1E\u0E47\u0E01\u0E43\u0E2A\u0E48\u0E16\u0E38\u0E07\u0E04\u0E25\u0E38\u0E21\u0E40\u0E2A\u0E37\u0E49\u0E2D\u0E1C\u0E49\u0E32" },
-  READY: { label: "6. \u0E1E\u0E23\u0E49\u0E2D\u0E21\u0E2A\u0E48\u0E07\u0E21\u0E2D\u0E1A/\u0E23\u0E31\u0E1A\u0E0A\u0E38\u0E14", desc: "\u0E0A\u0E38\u0E14\u0E15\u0E31\u0E14\u0E40\u0E22\u0E47\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E2A\u0E21\u0E1A\u0E39\u0E23\u0E13\u0E4C 100% \u0E1E\u0E23\u0E49\u0E2D\u0E21\u0E19\u0E31\u0E14\u0E23\u0E31\u0E1A\u0E0A\u0E38\u0E14\u0E2B\u0E23\u0E37\u0E2D\u0E08\u0E31\u0E14\u0E2A\u0E48\u0E07" },
-  SHIPPED: { label: "\u0E08\u0E31\u0E14\u0E2A\u0E48\u0E07\u0E1E\u0E31\u0E2A\u0E14\u0E38\u0E41\u0E25\u0E49\u0E27", desc: "\u0E08\u0E31\u0E14\u0E2A\u0E48\u0E07\u0E1C\u0E48\u0E32\u0E19\u0E1A\u0E23\u0E34\u0E29\u0E31\u0E17\u0E02\u0E19\u0E2A\u0E48\u0E07\u0E40\u0E23\u0E35\u0E22\u0E1A\u0E23\u0E49\u0E2D\u0E22\u0E41\u0E25\u0E49\u0E27" },
-  DELIVERED: { label: "\u0E1E\u0E31\u0E2A\u0E14\u0E38\u0E16\u0E36\u0E07\u0E1C\u0E39\u0E49\u0E23\u0E31\u0E1A\u0E41\u0E25\u0E49\u0E27", desc: "\u0E1E\u0E31\u0E2A\u0E14\u0E38\u0E08\u0E31\u0E14\u0E2A\u0E48\u0E07\u0E16\u0E36\u0E07\u0E25\u0E39\u0E01\u0E04\u0E49\u0E32\u0E40\u0E23\u0E35\u0E22\u0E1A\u0E23\u0E49\u0E2D\u0E22\u0E41\u0E25\u0E49\u0E27" },
-  COMPLETED: { label: "7. \u0E2A\u0E48\u0E07\u0E21\u0E2D\u0E1A\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08 \u{1F389}", desc: "\u0E25\u0E39\u0E01\u0E04\u0E49\u0E32\u0E15\u0E23\u0E27\u0E08\u0E23\u0E31\u0E1A\u0E0A\u0E38\u0E14\u0E41\u0E25\u0E30\u0E40\u0E0B\u0E47\u0E19\u0E23\u0E31\u0E1A\u0E21\u0E2D\u0E1A\u0E40\u0E23\u0E35\u0E22\u0E1A\u0E23\u0E49\u0E2D\u0E22\u0E41\u0E25\u0E49\u0E27" },
-  CANCELLED: { label: "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01\u0E2D\u0E2D\u0E40\u0E14\u0E2D\u0E23\u0E4C", desc: "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E2D\u0E2D\u0E40\u0E14\u0E2D\u0E23\u0E4C\u0E19\u0E35\u0E49\u0E16\u0E39\u0E01\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01" }
-};
 var cachedOrders = null;
 var cachedDeletedOrders = null;
 var cachedCatalogue = null;
@@ -593,7 +1163,75 @@ function safeResilientReadJson(filePath, fallback) {
   }
   return fallback;
 }
+var firebaseConfig = {
+  apiKey: "AIzaSyDbt86w9Tl3HTlmlQwr4P7StoBKyEC56vc",
+  authDomain: "nuhpre-order.firebaseapp.com",
+  projectId: "nuhpre-order",
+  storageBucket: "nuhpre-order.firebasestorage.app",
+  messagingSenderId: "81774640286",
+  appId: "1:81774640286:web:e596d6d5bb638d11380f8f",
+  measurementId: "G-YNVY3Y03PY"
+};
+var firestoreDb = null;
+function getFirestoreDb() {
+  if (!firestoreDb) {
+    try {
+      const fbApp = getFirebaseApps().length > 0 ? getFirebaseApp() : initFirebaseApp(firebaseConfig);
+      firestoreDb = getFirestore(fbApp);
+    } catch (e) {
+      console.warn("Failed to initialize Firebase in server:", e);
+    }
+  }
+  return firestoreDb;
+}
+async function readDeletedOrdersOnServer() {
+  if (isPostgresActive()) {
+    try {
+      const dbDeleted = await getDeletedOrderIdsFromDb();
+      if (dbDeleted && dbDeleted.length > 0) {
+        cachedDeletedOrders = dbDeleted;
+        return dbDeleted;
+      }
+    } catch (e) {
+      console.error("Error reading deleted orders from DB:", e);
+    }
+  }
+  try {
+    const fileDeleted = safeResilientReadJson(DELETED_ORDERS_FILE, cachedDeletedOrders || []);
+    if (fileDeleted && Array.isArray(fileDeleted)) {
+      cachedDeletedOrders = fileDeleted;
+      return fileDeleted;
+    }
+  } catch (err) {
+    console.error("Error reading deleted orders from file:", err);
+  }
+  return cachedDeletedOrders || [];
+}
 async function readOrdersOnServer() {
+  const db = getFirestoreDb();
+  if (db) {
+    try {
+      const snap = await getDocs(collection(db, "orders"));
+      if (!snap.empty) {
+        const firestoreOrders = [];
+        const deletedIds = await readDeletedOrdersOnServer();
+        const deletedSet = new Set(deletedIds);
+        snap.forEach((docSnap) => {
+          if (!deletedSet.has(docSnap.id)) {
+            const data = docSnap.data();
+            firestoreOrders.push({ ...data, id: data.id || docSnap.id });
+          }
+        });
+        if (firestoreOrders.length > 0) {
+          cachedOrders = firestoreOrders;
+          safeAtomicWriteJson(ORDERS_FILE, firestoreOrders);
+          return firestoreOrders;
+        }
+      }
+    } catch (fsErr) {
+      console.warn("[Firestore] Error in readOrdersOnServer:", fsErr);
+    }
+  }
   if (isPostgresActive()) {
     try {
       const dbOrders = await getOrdersFromDb();
@@ -627,28 +1265,118 @@ async function writeOrdersOnServer(orders) {
   }
   safeAtomicWriteJson(ORDERS_FILE, orders);
 }
-async function readDeletedOrdersOnServer() {
-  if (isPostgresActive()) {
-    try {
-      const dbDeleted = await getDeletedOrderIdsFromDb();
-      if (dbDeleted && dbDeleted.length > 0) {
-        cachedDeletedOrders = dbDeleted;
-        return dbDeleted;
+function sanitizeForFirestore(obj) {
+  if (obj === null || obj === void 0) return null;
+  if (Array.isArray(obj)) {
+    return obj.filter((item) => item !== void 0).map((item) => sanitizeForFirestore(item));
+  }
+  if (typeof obj === "object") {
+    const res = {};
+    for (const key of Object.keys(obj)) {
+      const val = obj[key];
+      if (val !== void 0) {
+        res[key] = sanitizeForFirestore(val);
       }
-    } catch (e) {
-      console.error("Error reading deleted orders from DB:", e);
     }
+    return res;
+  }
+  return obj;
+}
+function initFirestoreSentinel() {
+  const db = getFirestoreDb();
+  if (!db) return;
+  console.log("[Firestore Sentinel] Active and guarding against zombie orders & syncing staff orders...");
+  try {
+    onSnapshot(doc(db, "settings", "deleted_orders"), (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        if (data && Array.isArray(data.deletedIds)) {
+          const combined = Array.from(/* @__PURE__ */ new Set([...cachedDeletedOrders || [], ...data.deletedIds]));
+          if (combined.length > (cachedDeletedOrders || []).length) {
+            writeDeletedOrdersOnServer(combined);
+          }
+        }
+      }
+    }, (err) => {
+      console.warn("[Firestore Sentinel] deleted_orders subscription error:", err);
+    });
+  } catch (err) {
+    console.warn("[Firestore Sentinel] Failed to subscribe to deleted_orders:", err);
   }
   try {
-    const fileDeleted = safeResilientReadJson(DELETED_ORDERS_FILE, cachedDeletedOrders || []);
-    if (fileDeleted && Array.isArray(fileDeleted)) {
-      cachedDeletedOrders = fileDeleted;
-      return fileDeleted;
-    }
+    onSnapshot(collection(db, "orders"), async (snapshot) => {
+      const currentDeleted = cachedDeletedOrders || [];
+      const delSet = new Set(currentDeleted);
+      let hasZombie = false;
+      const validFromFirestore = [];
+      snapshot.forEach((docSnap) => {
+        const orderId = docSnap.id;
+        if (delSet.has(orderId)) {
+          hasZombie = true;
+          console.warn(`[Firestore Sentinel] Zombie order detected in Firestore: ${orderId}. Purging immediately.`);
+          deleteDoc(doc(db, "orders", orderId)).catch(() => {
+          });
+        } else {
+          const docData = docSnap.data();
+          if (docData && (docData.id || orderId)) {
+            validFromFirestore.push({ ...docData, id: docData.id || orderId });
+          }
+        }
+      });
+      if (hasZombie) {
+        broadcastSSEEvent("order_deleted", { deletedIds: currentDeleted });
+      }
+      if (validFromFirestore.length > 0) {
+        try {
+          const current = await readOrdersOnServer();
+          const map = /* @__PURE__ */ new Map();
+          for (const o of current) {
+            if (!delSet.has(o.id)) map.set(o.id, o);
+          }
+          let anyChange = false;
+          for (const fo of validFromFirestore) {
+            if (!fo || !fo.id || delSet.has(fo.id)) continue;
+            if (!map.has(fo.id)) {
+              map.set(fo.id, fo);
+              anyChange = true;
+            } else {
+              const existing = map.get(fo.id);
+              const existingTime = existing.updatedAt || 0;
+              const incomingTime = fo.updatedAt || 0;
+              if (incomingTime > existingTime) {
+                map.set(fo.id, { ...existing, ...fo });
+                anyChange = true;
+              }
+            }
+          }
+          if (anyChange) {
+            const fullyMerged = Array.from(map.values()).sort((a, b) => {
+              return (b.orderNumber || "").localeCompare(a.orderNumber || "", void 0, { numeric: true });
+            });
+            await writeOrdersOnServer(fullyMerged);
+            broadcastSSEEvent("orders_updated", { orders: fullyMerged, deletedIds: currentDeleted });
+            console.log(`[Firestore Sentinel] Synced ${fullyMerged.length} orders from Firestore to server.`);
+          }
+        } catch (e) {
+          console.warn("[Firestore Sentinel] Error syncing orders to server:", e);
+        }
+      }
+    }, (err) => {
+      console.warn("[Firestore Sentinel] orders subscription error:", err);
+    });
   } catch (err) {
-    console.error("Error reading deleted orders from file:", err);
+    console.warn("[Firestore Sentinel] Failed to subscribe to orders collection:", err);
   }
-  return cachedDeletedOrders || [];
+  getDocs(collection(db, "orders")).then((snap) => {
+    snap.forEach(async (docSnap) => {
+      if (cachedDeletedOrders && cachedDeletedOrders.includes(docSnap.id)) {
+        console.warn(`[Firestore Sentinel] Initial purge of zombie order ${docSnap.id}`);
+        await deleteDoc(doc(db, "orders", docSnap.id)).catch(() => {
+        });
+      }
+    });
+  }).catch(() => {
+  });
 }
 async function writeDeletedOrdersOnServer(ids, newDeletedId) {
   cachedDeletedOrders = ids;
@@ -657,6 +1385,21 @@ async function writeDeletedOrdersOnServer(ids, newDeletedId) {
       await deleteOrderInDb(newDeletedId);
     } catch (e) {
       console.error("Error deleting order in DB:", e);
+    }
+  }
+  const db = getFirestoreDb();
+  if (db) {
+    try {
+      setDoc(doc(db, "settings", "deleted_orders"), {
+        deletedIds: arrayUnion(...ids),
+        _syncedAt: (/* @__PURE__ */ new Date()).toISOString()
+      }, { merge: true }).catch(() => {
+      });
+      if (newDeletedId) {
+        deleteDoc(doc(db, "orders", newDeletedId)).catch(() => {
+        });
+      }
+    } catch (e) {
     }
   }
   safeAtomicWriteJson(DELETED_ORDERS_FILE, ids);
@@ -930,6 +1673,20 @@ app.post("/api/orders", async (req, res) => {
     });
     await writeOrdersOnServer(fullyMerged);
     broadcastSSEEvent("orders_updated", { orders: fullyMerged, deletedIds });
+    const db = getFirestoreDb();
+    if (db) {
+      for (const o of incomingOrders) {
+        if (o && o.id && !deletedSet.has(o.id)) {
+          const sanitized = sanitizeForFirestore({
+            ...o,
+            _syncedAt: (/* @__PURE__ */ new Date()).toISOString()
+          });
+          setDoc(doc(db, "orders", o.id), sanitized, { merge: true }).catch((err) => {
+            console.warn(`[Server] Firestore write error for order ${o.id}:`, err);
+          });
+        }
+      }
+    }
     res.json(fullyMerged);
   } else if (Array.isArray(req.body)) {
     const current = await readOrdersOnServer();
@@ -957,6 +1714,20 @@ app.post("/api/orders", async (req, res) => {
     });
     await writeOrdersOnServer(fullyMerged);
     broadcastSSEEvent("orders_updated", { orders: fullyMerged, deletedIds });
+    const db = getFirestoreDb();
+    if (db) {
+      for (const o of req.body) {
+        if (o && o.id && !deletedSet.has(o.id)) {
+          const sanitized = sanitizeForFirestore({
+            ...o,
+            _syncedAt: (/* @__PURE__ */ new Date()).toISOString()
+          });
+          setDoc(doc(db, "orders", o.id), sanitized, { merge: true }).catch((err) => {
+            console.warn(`[Server] Firestore write error for order ${o.id}:`, err);
+          });
+        }
+      }
+    }
     res.json(fullyMerged);
   } else {
     res.status(400).json({ error: "Invalid data format. Expected an array of orders or an object with orders." });
@@ -1021,7 +1792,11 @@ async function getEffectiveLineConfig(req) {
   const oaId = (settings.lineOaId || process.env.LINE_OA_ID || "@237aynfq").trim();
   const host = req ? req.get("x-forwarded-host") || req.get("host") : "";
   const proto = req ? req.get("x-forwarded-proto") || "https" : "https";
-  const rawBaseUrl = lastKnownPublicUrl || process.env.PUBLIC_APP_URL || (host ? `${proto}://${host}` : "");
+  const requestBaseUrl = host ? `${proto}://${host}` : "";
+  const configuredUrl = (settings.publicUrl || "").trim();
+  const validConfigured = configuredUrl && !configuredUrl.includes("nunuh-pre-order2026.onrender.com") && !configuredUrl.includes("nunuh.onrender.com") ? configuredUrl : "";
+  const appUrl = (process.env.APP_URL || "").trim();
+  const rawBaseUrl = validConfigured || appUrl || requestBaseUrl || lastKnownPublicUrl || process.env.PUBLIC_APP_URL || "";
   const cleanBase = (rawBaseUrl || "").replace(/\/+$/, "");
   const webhookUrl = cleanBase ? `${cleanBase}/api/webhook/line` : "/api/webhook/line";
   return {
@@ -1100,6 +1875,68 @@ app.post("/api/send-status", async (req, res) => {
     }
   } catch (err) {
     console.error("\u274C Error sending push message:", err);
+    return res.status(500).json({ error: err.message || "Internal server error" });
+  }
+});
+app.post("/api/notify-order-created", async (req, res) => {
+  try {
+    const { order } = req.body || {};
+    if (!order) {
+      return res.status(400).json({ error: "Order object is required" });
+    }
+    const settings = await readSettingsOnServer();
+    const lineConfig = await getEffectiveLineConfig(req);
+    const token = lineConfig.token;
+    const baseAppUrl = lineConfig.webhookUrl.replace(/\/api\/webhook\/line$/, "");
+    let customerNotified = false;
+    let ownerNotified = false;
+    if (token) {
+      if (order.lineUserId) {
+        try {
+          const customerMsg = formatNewOrderCustomerConfirmation(order, baseAppUrl);
+          const pushRes = await fetch("https://api.line.me/v2/bot/message/push", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${token}`
+            },
+            body: JSON.stringify({
+              to: order.lineUserId,
+              messages: [{ type: "text", text: customerMsg }]
+            })
+          });
+          customerNotified = pushRes.ok;
+          if (!pushRes.ok) {
+            console.warn("[LINE Push] Customer push failed:", await pushRes.text());
+          }
+        } catch (cErr) {
+          console.warn("[LINE Push] Error pushing to customer:", cErr);
+        }
+      }
+      const ownerUserId = (settings.ownerLineUserId || process.env.OWNER_LINE_USER_ID || "").trim();
+      if (ownerUserId) {
+        try {
+          const ownerMsg = formatNewOrderOwnerAlert(order, baseAppUrl);
+          const ownerRes = await fetch("https://api.line.me/v2/bot/message/push", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${token}`
+            },
+            body: JSON.stringify({
+              to: ownerUserId,
+              messages: [{ type: "text", text: ownerMsg }]
+            })
+          });
+          ownerNotified = ownerRes.ok;
+        } catch (oErr) {
+          console.warn("[LINE Push] Error pushing to owner:", oErr);
+        }
+      }
+    }
+    return res.json({ success: true, customerNotified, ownerNotified });
+  } catch (err) {
+    console.error("Error in /api/notify-order-created:", err);
     return res.status(500).json({ error: err.message || "Internal server error" });
   }
 });
@@ -1270,6 +2107,78 @@ app.get("/api/line-config-status", async (req, res) => {
     source: lineConfig.source
   });
 });
+app.get("/api/line/webhook-endpoint", async (req, res) => {
+  const lineConfig = await getEffectiveLineConfig(req);
+  const token = lineConfig.token;
+  if (!token) {
+    return res.status(400).json({ error: "LINE Channel Access Token not configured" });
+  }
+  try {
+    const response = await fetch("https://api.line.me/v2/bot/channel/webhook/endpoint", {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const data = await response.json();
+    return res.json(data);
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Failed to query LINE webhook endpoint" });
+  }
+});
+app.post("/api/line/test-webhook", async (req, res) => {
+  const lineConfig = await getEffectiveLineConfig(req);
+  const token = lineConfig.token;
+  if (!token) {
+    return res.status(400).json({ error: "LINE Channel Access Token not configured" });
+  }
+  try {
+    const { endpoint } = req.body || {};
+    const testBody = endpoint ? { endpoint } : {};
+    const response = await fetch("https://api.line.me/v2/bot/channel/webhook/test", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify(testBody)
+    });
+    const data = await response.json();
+    return res.json(data);
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Failed to test LINE webhook" });
+  }
+});
+app.post("/api/line/set-webhook-endpoint", async (req, res) => {
+  const lineConfig = await getEffectiveLineConfig(req);
+  const token = lineConfig.token;
+  if (!token) {
+    return res.status(400).json({ error: "LINE Channel Access Token not configured" });
+  }
+  const { endpoint } = req.body || {};
+  if (!endpoint || !endpoint.startsWith("https://")) {
+    return res.status(400).json({ error: "Valid HTTPS Webhook endpoint is required" });
+  }
+  try {
+    const response = await fetch("https://api.line.me/v2/bot/channel/webhook/endpoint", {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({ endpoint: endpoint.trim() })
+    });
+    if (response.ok) {
+      const cleanBase = endpoint.replace(/\/api\/webhook\/line$/, "").replace(/\/webhook\/line$/, "");
+      const settings = await readSettingsOnServer();
+      settings.publicUrl = cleanBase;
+      await writeSettingsOnServer(settings);
+      return res.json({ success: true, endpoint: endpoint.trim() });
+    } else {
+      const errText = await response.text();
+      return res.status(response.status).json({ error: errText });
+    }
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Failed to set LINE webhook endpoint" });
+  }
+});
 app.get(["/api/webhook/line", "/webhook/line", "/api/line/webhook", "/api/line-webhook"], (req, res) => {
   res.status(200).json({
     status: "ok",
@@ -1306,139 +2215,67 @@ app.post(["/api/webhook/line", "/webhook/line", "/api/line/webhook", "/api/line-
         const text = originalText.toLowerCase();
         console.log(`Received user text message: "${originalText}"`);
         const orders = await readOrdersOnServer();
-        const cleanSearchText = text.replace(/[- \s\t\n]/g, "");
-        const phoneMatch = originalText.match(/0\d{8,9}/);
-        const orderNumMatch = originalText.match(/NU-?\d{4,6}/i);
-        const extractedPhone = phoneMatch ? phoneMatch[0] : "";
-        const extractedOrderNum = orderNumMatch ? orderNumMatch[0].replace(/-/g, "").toLowerCase() : "";
-        const strippedTitleText = text.replace(/^(คุณ|นางสาว|น\.ส\.|นาง|นาย|ด\.ญ\.|ด\.ช\.|พี่|น้อง)\s*/i, "").trim();
-        const cleanStrippedTitle = strippedTitleText.replace(/[- \s\t\n]/g, "");
-        const matchedOrders = orders.filter((o) => {
-          if (!o) return false;
-          const phoneClean = (o.customerPhone || "").replace(/[- \s]/g, "");
-          const orderNumClean = (o.orderNumber || "").replace(/[- \s]/g, "").toLowerCase();
-          const nameClean = (o.customerName || "").toLowerCase();
-          const nameCleanNoTitle = nameClean.replace(/^(คุณ|นางสาว|น\.ส\.|นาง|นาย|ด\.ญ\.|ด\.ช\.|พี่|น้อง)\s*/i, "").trim();
-          const nameNoSpaces = nameCleanNoTitle.replace(/[- \s\t\n]/g, "");
-          const nicknameClean = (o.customerNickname || "").toLowerCase();
-          const lineUid = (o.lineUserId || "").toLowerCase();
-          const matchesPhone = extractedPhone && phoneClean.includes(extractedPhone);
-          const matchesCleanSearchPhone = cleanSearchText.length >= 4 && phoneClean.includes(cleanSearchText);
-          const matchesExtractedOrder = extractedOrderNum && orderNumClean.includes(extractedOrderNum);
-          const matchesCleanSearchOrder = cleanSearchText.length >= 3 && orderNumClean.includes(cleanSearchText);
-          const matchesDirectName = nameClean.includes(text) || nameCleanNoTitle && nameCleanNoTitle.includes(strippedTitleText);
-          const matchesNickname = nicknameClean && (nicknameClean.includes(text) || nicknameClean.includes(strippedTitleText) || text.includes(nicknameClean));
-          const matchesNoSpaceName = cleanStrippedTitle.length >= 2 && nameNoSpaces.includes(cleanStrippedTitle);
-          const words = text.split(/\s+/).filter((w) => w.length >= 2);
-          const matchesNameWords = words.length > 0 && words.some(
-            (w) => nameClean.includes(w) || nameCleanNoTitle.includes(w) || nicknameClean && nicknameClean.includes(w)
-          );
-          const matchesLineUid = event.source?.userId && lineUid === event.source.userId.toLowerCase();
-          return matchesPhone || matchesCleanSearchPhone || matchesExtractedOrder || matchesCleanSearchOrder || matchesDirectName || matchesNickname || matchesNoSpaceName || matchesNameWords || matchesLineUid;
-        });
+        const matchedOrders = smartMatchOrders(originalText, orders, event.source?.userId);
         if (matchedOrders.length > 0 && event.source?.userId) {
+          const userId = event.source.userId;
+          const fsDb = getFirestoreDb();
           let updatedAny = false;
-          const updatedOrders = orders.map((o) => {
-            if (matchedOrders.some((mo) => mo.id === o.id)) {
-              if (o.lineUserId !== event.source.userId) {
-                o.lineUserId = event.source.userId;
-                updatedAny = true;
+          for (const mo of matchedOrders) {
+            if (mo && mo.id && mo.lineUserId !== userId) {
+              mo.lineUserId = userId;
+              mo.updatedAt = Date.now();
+              updatedAny = true;
+              if (fsDb) {
+                setDoc(doc(fsDb, "orders", mo.id), { lineUserId: userId, updatedAt: Date.now() }, { merge: true }).catch((err) => {
+                  console.warn("[Firestore] Failed to save lineUserId to order:", err);
+                });
               }
             }
-            return o;
-          });
+          }
           if (updatedAny) {
-            await writeOrdersOnServer(updatedOrders);
-            console.log(`[Webhook] Auto-linked lineUserId: ${event.source.userId} to matched orders.`);
+            await writeOrdersOnServer(orders);
+            broadcastSSEEvent("orders_updated", { orders });
+            console.log(`[Webhook] Auto-linked lineUserId: ${userId} to ${matchedOrders.length} order(s).`);
           }
         }
         let replyMessage = "";
-        const baseAppUrl = lastKnownPublicUrl || process.env.PUBLIC_APP_URL || `https://${req.get("host")}`;
+        const proto = req.get("x-forwarded-proto") || "https";
+        const host = req.get("x-forwarded-host") || req.get("host");
+        const settings = await readSettingsOnServer();
+        const configuredUrl = (settings.publicUrl || "").trim();
+        const appUrl = (process.env.APP_URL || "").trim();
+        const baseAppUrl = (configuredUrl || appUrl || lastKnownPublicUrl || (host ? `${proto}://${host}` : "") || process.env.PUBLIC_APP_URL || "").replace(/\/+$/, "");
         if (matchedOrders.length === 0) {
-          const isLikelySearchQuery = /^(\+?66|0)[0-9]{8,9}$/.test(cleanSearchText) || /^[A-Za-z0-9_-]{4,15}$/.test(cleanSearchText);
-          if (isLikelySearchQuery && cleanSearchText.length >= 6) {
-            replyMessage = `\u0E2A\u0E27\u0E31\u0E2A\u0E14\u0E35\u0E04\u0E48\u0E30\u0E04\u0E38\u0E13\u0E25\u0E39\u0E01\u0E04\u0E49\u0E32 \u269C\uFE0F NUNUH Boutique \u269C\uFE0F \u0E22\u0E34\u0E19\u0E14\u0E35\u0E43\u0E2B\u0E49\u0E1A\u0E23\u0E34\u0E01\u0E32\u0E23\u0E04\u0E48\u0E30
-
-\u274C \u0E02\u0E2D\u0E2D\u0E20\u0E31\u0E22\u0E04\u0E48\u0E30 \u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E2D\u0E2D\u0E40\u0E14\u0E2D\u0E23\u0E4C\u0E40\u0E2A\u0E37\u0E49\u0E2D\u0E1C\u0E49\u0E32\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13\u0E25\u0E39\u0E01\u0E04\u0E49\u0E32\u0E08\u0E32\u0E01\u0E04\u0E33\u0E04\u0E49\u0E19\u0E2B\u0E32 "${originalText}"
-
-\u{1F4CC} \u0E27\u0E34\u0E18\u0E35\u0E01\u0E32\u0E23\u0E15\u0E23\u0E27\u0E08\u0E2A\u0E2D\u0E1A\u0E2A\u0E16\u0E32\u0E19\u0E30\u0E2D\u0E2D\u0E40\u0E14\u0E2D\u0E23\u0E4C\u0E2D\u0E31\u0E15\u0E42\u0E19\u0E21\u0E31\u0E15\u0E34:
-\u2022 \u0E1E\u0E34\u0E21\u0E1E\u0E4C \u0E40\u0E1A\u0E2D\u0E23\u0E4C\u0E42\u0E17\u0E23\u0E28\u0E31\u0E1E\u0E17\u0E4C \u0E17\u0E35\u0E48\u0E41\u0E08\u0E49\u0E07\u0E44\u0E27\u0E49\u0E15\u0E2D\u0E19\u0E27\u0E31\u0E14\u0E15\u0E31\u0E27 (\u0E40\u0E0A\u0E48\u0E19 086-555-1234)
-\u2022 \u0E2B\u0E23\u0E37\u0E2D\u0E1E\u0E34\u0E21\u0E1E\u0E4C \u0E40\u0E25\u0E02\u0E17\u0E35\u0E48\u0E2D\u0E2D\u0E40\u0E14\u0E2D\u0E23\u0E4C (\u0E40\u0E0A\u0E48\u0E19 NU-26008)
-\u2022 \u0E2B\u0E23\u0E37\u0E2D\u0E1E\u0E34\u0E21\u0E1E\u0E4C \u0E0A\u0E37\u0E48\u0E2D-\u0E19\u0E32\u0E21\u0E2A\u0E01\u0E38\u0E25 \u0E02\u0E2D\u0E07\u0E17\u0E48\u0E32\u0E19
-
-\u0E23\u0E30\u0E1A\u0E1A\u0E08\u0E30\u0E1B\u0E23\u0E30\u0E21\u0E27\u0E25\u0E1C\u0E25\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E41\u0E25\u0E30\u0E2A\u0E48\u0E07\u0E25\u0E34\u0E07\u0E01\u0E4C\u0E15\u0E34\u0E14\u0E15\u0E32\u0E21\u0E07\u0E32\u0E19\u0E43\u0E2B\u0E49\u0E17\u0E48\u0E32\u0E19\u0E15\u0E23\u0E27\u0E08\u0E2A\u0E2D\u0E1A\u0E23\u0E32\u0E22\u0E25\u0E30\u0E40\u0E2D\u0E35\u0E22\u0E14 \u0E2A\u0E31\u0E14\u0E2A\u0E48\u0E27\u0E19\u0E17\u0E35\u0E48\u0E27\u0E31\u0E14\u0E15\u0E31\u0E27 \u0E41\u0E25\u0E30\u0E04\u0E27\u0E32\u0E21\u0E04\u0E37\u0E1A\u0E2B\u0E19\u0E49\u0E32\u0E02\u0E2D\u0E07\u0E0A\u0E38\u0E14\u0E44\u0E14\u0E49\u0E17\u0E31\u0E19\u0E17\u0E35\u0E40\u0E25\u0E22\u0E04\u0E48\u0E30 \u2728`;
+          const digits = originalText.replace(/\D/g, "");
+          const isLikelySearch = digits.length >= 7 || /NU-?\d{3,6}/i.test(originalText) || originalText.length >= 2;
+          if (isLikelySearch && (digits.length >= 7 || /NU-?\d{3,6}/i.test(originalText))) {
+            replyMessage = formatOrderNotFoundMessage(originalText);
           } else {
             try {
               replyMessage = await generateAiFashionReply(originalText);
             } catch (e) {
               replyMessage = `\u0E2A\u0E27\u0E31\u0E2A\u0E14\u0E35\u0E04\u0E48\u0E30\u0E04\u0E38\u0E13\u0E25\u0E39\u0E01\u0E04\u0E49\u0E32 \u269C\uFE0F NUNUH Boutique \u269C\uFE0F \u0E22\u0E34\u0E19\u0E14\u0E35\u0E43\u0E2B\u0E49\u0E1A\u0E23\u0E34\u0E01\u0E32\u0E23\u0E04\u0E48\u0E30
 
-\u0E04\u0E38\u0E13\u0E25\u0E39\u0E01\u0E04\u0E49\u0E32\u0E2A\u0E32\u0E21\u0E32\u0E23\u0E16\u0E2A\u0E2D\u0E1A\u0E16\u0E32\u0E21\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E01\u0E32\u0E23\u0E2A\u0E31\u0E48\u0E07\u0E15\u0E31\u0E14\u0E0A\u0E38\u0E14 \u0E2B\u0E23\u0E37\u0E2D\u0E1E\u0E34\u0E21\u0E1E\u0E4C\u0E40\u0E1A\u0E2D\u0E23\u0E4C\u0E42\u0E17\u0E23\u0E28\u0E31\u0E1E\u0E17\u0E4C/\u0E40\u0E25\u0E02\u0E17\u0E35\u0E48\u0E2D\u0E2D\u0E40\u0E14\u0E2D\u0E23\u0E4C \u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E15\u0E34\u0E14\u0E15\u0E32\u0E21\u0E2A\u0E16\u0E32\u0E19\u0E30\u0E07\u0E32\u0E19\u0E15\u0E31\u0E14\u0E40\u0E22\u0E47\u0E1A\u0E44\u0E14\u0E49\u0E15\u0E25\u0E2D\u0E14 24 \u0E0A\u0E21. \u0E40\u0E25\u0E22\u0E19\u0E30\u0E04\u0E30 \u2728`;
+\u0E04\u0E38\u0E13\u0E25\u0E39\u0E01\u0E04\u0E49\u0E32\u0E2A\u0E32\u0E21\u0E32\u0E23\u0E16\u0E2A\u0E2D\u0E1A\u0E16\u0E32\u0E21\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E01\u0E32\u0E23\u0E2A\u0E31\u0E48\u0E07\u0E15\u0E31\u0E14\u0E0A\u0E38\u0E14 \u0E2B\u0E23\u0E37\u0E2D\u0E1E\u0E34\u0E21\u0E1E\u0E4C\u0E40\u0E1A\u0E2D\u0E23\u0E4C\u0E42\u0E17\u0E23\u0E28\u0E31\u0E1E\u0E17\u0E4C/\u0E0A\u0E37\u0E48\u0E2D/\u0E40\u0E25\u0E02\u0E17\u0E35\u0E48\u0E2D\u0E2D\u0E40\u0E14\u0E2D\u0E23\u0E4C \u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E15\u0E34\u0E14\u0E15\u0E32\u0E21\u0E2A\u0E16\u0E32\u0E19\u0E30\u0E07\u0E32\u0E19\u0E15\u0E31\u0E14\u0E40\u0E22\u0E47\u0E1A\u0E44\u0E14\u0E49\u0E15\u0E25\u0E2D\u0E14 24 \u0E0A\u0E21. \u0E40\u0E25\u0E22\u0E19\u0E30\u0E04\u0E30 \u2728`;
             }
           }
-        } else if (matchedOrders.length === 1) {
-          const order = matchedOrders[0];
-          const stCfg = STATUS_MAP_TH[order.status] || { label: order.status, desc: "\u0E01\u0E33\u0E25\u0E31\u0E07\u0E14\u0E33\u0E40\u0E19\u0E34\u0E19\u0E01\u0E32\u0E23" };
-          let formattedDelivery = order.deliveryDate || "-";
-          try {
-            formattedDelivery = new Date(order.deliveryDate).toLocaleDateString("th-TH", {
-              day: "numeric",
-              month: "long",
-              year: "numeric"
-            });
-          } catch (e) {
-          }
-          const price = Number(order.price || 0);
-          const deposit = Number(order.deposit || 0);
-          const discount = Number(order.discount || 0);
-          const finalPaid = Number(order.finalPaymentAmount || 0);
-          const unpaid = Math.max(0, price - deposit - discount - finalPaid);
-          const lineUserIdParam = event.source?.userId ? `&lineUserId=${event.source.userId}` : "";
-          const portalUrl = `${baseAppUrl}/?mode=customer&search=${encodeURIComponent(order.customerPhone || order.orderNumber)}${lineUserIdParam}`;
-          replyMessage = `\u269C\uFE0F \u0E2D\u0E31\u0E1B\u0E40\u0E14\u0E15\u0E2A\u0E16\u0E32\u0E19\u0E30\u0E0A\u0E38\u0E14\u0E2A\u0E31\u0E48\u0E07\u0E15\u0E31\u0E14 NUNUH Boutique \u269C\uFE0F
-
-\u{1F464} \u0E40\u0E23\u0E35\u0E22\u0E19\u0E04\u0E38\u0E13: ${order.customerName}${order.customerNickname ? ` (${order.customerNickname})` : ""}
-\u{1F9FE} \u0E23\u0E2B\u0E31\u0E2A\u0E2D\u0E2D\u0E40\u0E14\u0E2D\u0E23\u0E4C: ${order.orderNumber}
-\u{1F457} \u0E41\u0E1A\u0E1A\u0E0A\u0E38\u0E14: ${order.dressType}
-\u{1F9F5} \u0E0A\u0E19\u0E34\u0E14\u0E1C\u0E49\u0E32: ${order.fabricType || "\u0E15\u0E32\u0E21\u0E17\u0E35\u0E48\u0E23\u0E30\u0E1A\u0E38"} (${order.fabricColor || "-"})
-
-\u{1F4CD} \u0E2A\u0E16\u0E32\u0E19\u0E30\u0E1B\u0E31\u0E08\u0E08\u0E38\u0E1A\u0E31\u0E19: [${stCfg.label}]
-\u2139\uFE0F \u0E23\u0E32\u0E22\u0E25\u0E30\u0E40\u0E2D\u0E35\u0E22\u0E14: "${stCfg.desc}"
-\u{1F4C5} \u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E2D\u0E31\u0E1B\u0E40\u0E14\u0E15\u0E2A\u0E16\u0E32\u0E19\u0E30: ${order.statusDate || order.orderDate || "-"}
-\u23F3 \u0E01\u0E33\u0E2B\u0E19\u0E14\u0E2A\u0E48\u0E07\u0E21\u0E2D\u0E1A: ${formattedDelivery}
-
-\u{1F4B0} \u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E22\u0E2D\u0E14\u0E40\u0E07\u0E34\u0E19:
-\u2022 \u0E23\u0E32\u0E04\u0E32\u0E23\u0E27\u0E21: ${price.toLocaleString()} \u0E1A\u0E32\u0E17
-\u2022 \u0E21\u0E31\u0E14\u0E08\u0E33\u0E41\u0E25\u0E49\u0E27: ${deposit.toLocaleString()} \u0E1A\u0E32\u0E17
-` + (unpaid === 0 ? `\u2022 \u0E2A\u0E16\u0E32\u0E19\u0E30\u0E0A\u0E33\u0E23\u0E30: \u0E0A\u0E33\u0E23\u0E30\u0E04\u0E23\u0E1A\u0E16\u0E49\u0E27\u0E19\u0E41\u0E25\u0E49\u0E27 \u2713
-
-` : `\u2022 \u0E22\u0E2D\u0E14\u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D\u0E27\u0E31\u0E19\u0E23\u0E31\u0E1A\u0E0A\u0E38\u0E14: ${unpaid.toLocaleString()} \u0E1A\u0E32\u0E17
-
-`) + `\u{1F517} \u0E15\u0E23\u0E27\u0E08\u0E2A\u0E2D\u0E1A\u0E23\u0E32\u0E22\u0E25\u0E30\u0E40\u0E2D\u0E35\u0E22\u0E14 \u0E2A\u0E31\u0E14\u0E2A\u0E48\u0E27\u0E19 \u0E41\u0E25\u0E30\u0E15\u0E34\u0E14\u0E15\u0E32\u0E21\u0E07\u0E32\u0E19\u0E15\u0E31\u0E14\u0E40\u0E22\u0E47\u0E1A\u0E14\u0E49\u0E27\u0E22\u0E15\u0E19\u0E40\u0E2D\u0E07\u0E44\u0E14\u0E49\u0E17\u0E35\u0E48\u0E19\u0E35\u0E48\u0E04\u0E48\u0E30:
-${portalUrl}
-
-\u0E2B\u0E32\u0E01\u0E17\u0E48\u0E32\u0E19\u0E15\u0E49\u0E2D\u0E07\u0E01\u0E32\u0E23\u0E2A\u0E2D\u0E1A\u0E16\u0E32\u0E21\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E40\u0E1E\u0E34\u0E48\u0E21\u0E40\u0E15\u0E34\u0E21 \u0E2A\u0E32\u0E21\u0E32\u0E23\u0E16\u0E1E\u0E34\u0E21\u0E1E\u0E4C\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E17\u0E34\u0E49\u0E07\u0E44\u0E27\u0E49\u0E43\u0E19\u0E41\u0E0A\u0E17\u0E19\u0E35\u0E49\u0E44\u0E14\u0E49\u0E40\u0E25\u0E22\u0E19\u0E30\u0E04\u0E30 \u2728`;
         } else {
-          let listText = "";
-          matchedOrders.slice(0, 5).forEach((order, idx) => {
-            const stCfg = STATUS_MAP_TH[order.status] || { label: order.status, desc: "" };
-            listText += `${idx + 1}. \u0E2D\u0E2D\u0E40\u0E14\u0E2D\u0E23\u0E4C ${order.orderNumber} (${order.dressType})
-   \u{1F4CD} \u0E2A\u0E16\u0E32\u0E19\u0E30: [${stCfg.label || order.status}]
-`;
-          });
-          const lineUserIdParam = event.source?.userId ? `&lineUserId=${event.source.userId}` : "";
-          const portalUrl = `${baseAppUrl}/?mode=customer&search=${encodeURIComponent(matchedOrders[0].customerPhone || matchedOrders[0].orderNumber)}${lineUserIdParam}`;
-          replyMessage = `\u269C\uFE0F \u0E1E\u0E1A\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E2A\u0E31\u0E48\u0E07\u0E15\u0E31\u0E14\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14 ${matchedOrders.length} \u0E2D\u0E2D\u0E40\u0E14\u0E2D\u0E23\u0E4C\u0E04\u0E48\u0E30:
-
-${listText}
-\u{1F517} \u0E40\u0E1B\u0E34\u0E14\u0E14\u0E39\u0E23\u0E32\u0E22\u0E25\u0E30\u0E40\u0E2D\u0E35\u0E22\u0E14 \u0E2A\u0E31\u0E14\u0E2A\u0E48\u0E27\u0E19 \u0E41\u0E25\u0E30\u0E2A\u0E16\u0E32\u0E19\u0E30\u0E17\u0E38\u0E01\u0E2D\u0E2D\u0E40\u0E14\u0E2D\u0E23\u0E4C\u0E44\u0E14\u0E49\u0E17\u0E35\u0E48\u0E25\u0E34\u0E07\u0E01\u0E4C\u0E19\u0E35\u0E49\u0E40\u0E25\u0E22\u0E04\u0E48\u0E30:
-${portalUrl}
-
-\u0E02\u0E2D\u0E1A\u0E1E\u0E23\u0E30\u0E04\u0E38\u0E13\u0E17\u0E35\u0E48\u0E44\u0E27\u0E49\u0E27\u0E32\u0E07\u0E43\u0E08 NUNUH Boutique \u0E04\u0E48\u0E30 \u{1F496}`;
+          replyMessage = formatCustomerOrdersReport(matchedOrders, baseAppUrl, event.source?.userId);
         }
         if (LINE_CHANNEL_ACCESS_TOKEN && replyToken) {
           try {
-            const response = await fetch("https://api.line.me/v2/bot/message/reply", {
+            const flexObj = matchedOrders.length > 0 ? buildOrdersLineFlexMessage(matchedOrders, baseAppUrl, event.source?.userId) : null;
+            const messagesPayload = [];
+            if (flexObj) {
+              messagesPayload.push(flexObj);
+            }
+            if (replyMessage) {
+              messagesPayload.push({
+                type: "text",
+                text: replyMessage
+              });
+            }
+            let response = await fetch("https://api.line.me/v2/bot/message/reply", {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
@@ -1446,19 +2283,29 @@ ${portalUrl}
               },
               body: JSON.stringify({
                 replyToken,
-                messages: [
-                  {
-                    type: "text",
-                    text: replyMessage
-                  }
-                ]
+                messages: messagesPayload
               })
             });
+            if (!response.ok && flexObj) {
+              const flexErr = await response.text();
+              console.warn("\u26A0\uFE0F LINE reply with Flex failed, falling back to pure text message. Status:", response.status, "Error:", flexErr);
+              response = await fetch("https://api.line.me/v2/bot/message/reply", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  "Authorization": `Bearer ${LINE_CHANNEL_ACCESS_TOKEN}`
+                },
+                body: JSON.stringify({
+                  replyToken,
+                  messages: [{ type: "text", text: replyMessage }]
+                })
+              });
+            }
             if (!response.ok) {
               const errBody = await response.text();
               console.error("\u274C Failed to send LINE reply. HTTP status:", response.status, "Response:", errBody);
             } else {
-              console.log("\u2705 Send LINE reply successful!");
+              console.log(`\u2705 Send LINE reply successful for ${matchedOrders.length} order(s)!`);
             }
           } catch (err) {
             console.error("\u274C Error sending LINE reply:", err);
@@ -1487,6 +2334,7 @@ app.post("/api/chat/gemini", async (req, res) => {
 });
 async function startServer() {
   await initDb();
+  initFirestoreSentinel();
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
