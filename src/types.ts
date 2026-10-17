@@ -127,7 +127,7 @@ export interface Order {
   customerPhotoBack?: string;  // ภาพถ่ายลูกค้า ด้านหลัง (บังคับ)
   customerPhotoExtra1?: string; // ภาพถ่ายเพิ่มเติม 1 (เช่น สัดส่วน/รายละเอียดพิเศษ)
   customerPhotoExtra2?: string; // ภาพถ่ายเพิ่มเติม 2 (เช่น สัดส่วน/รายละเอียดพิเศษ)
-  branch?: string;           // สาขาที่รับออเดอร์ (สาขานราธิวาส, สาขายะลา, สาขาปัตตานี, สาขาหาดใหญ่)
+  branch?: string;           // สาขาที่รับออเดอร์ (สาขานราธิวาส, สาขายะลา, สาขาปัตตานี, สาขาหาดใหญ่, สาขาเดอะมอลล์, สาขากระบี่)
   staffName?: string;        // ชื่อพนักงานผู้รับออเดอร์
   staffBranch?: string;      // สาขาของพนักงานผู้รับออเดอร์
   tailorName?: string;       // ชื่อช่างตัดเย็บ / ช่างแพทเทิร์น / ผู้รับผิดชอบตัดเย็บ (Tailor / Seamstress)
@@ -146,6 +146,18 @@ export interface Order {
   pickupSignedAt?: string;     // วันเวลาที่เซ็นรับมอบชุด
   isLocked?: boolean;          // ล็อกออเดอร์ถาวร ห้ามแก้ไขหรือลบข้อมูล
 }
+
+// รายชื่อสาขาทั้งหมดของห้องเสื้อ NUNUH
+export const BOUTIQUE_BRANCHES = [
+  'สาขานราธิวาส',
+  'สาขายะลา',
+  'สาขาปัตตานี',
+  'สาขาหาดใหญ่',
+  'สาขาเดอะมอลล์',
+  'สาขากระบี่'
+] as const;
+
+export type BoutiqueBranch = typeof BOUTIQUE_BRANCHES[number] | string;
 
 export interface FeedbackMessage {
   id: string;

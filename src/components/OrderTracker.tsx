@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Order, OrderStatus, STATUS_MAP, StatusConfig, CatalogueItem, PRODUCTION_PIPELINE_STEPS } from '../types';
+import { Order, OrderStatus, STATUS_MAP, StatusConfig, CatalogueItem, PRODUCTION_PIPELINE_STEPS, BOUTIQUE_BRANCHES } from '../types';
 import { 
   Search, 
   Filter, 
@@ -1582,14 +1582,13 @@ export default function OrderTracker({
             <select
               value={branchFilter}
               onChange={(e) => setBranchFilter(e.target.value)}
-              style={{ width: '150px' }}
-              className="w-[150px] text-xs bg-purple-50 text-purple-900 border border-purple-200 font-semibold px-3 py-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500/20 cursor-pointer"
+              style={{ width: '160px' }}
+              className="w-[160px] text-xs bg-purple-50 text-purple-900 border border-purple-200 font-semibold px-3 py-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500/20 cursor-pointer"
             >
               <option value="ALL">🏪 ทุกสาขา</option>
-              <option value="สาขานราธิวาส">สาขานราธิวาส</option>
-              <option value="สาขายะลา">สาขายะลา</option>
-              <option value="สาขาปัตตานี">สาขาปัตตานี</option>
-              <option value="สาขาหาดใหญ่">สาขาหาดใหญ่</option>
+              {BOUTIQUE_BRANCHES.map((b) => (
+                <option key={b} value={b}>{b}</option>
+              ))}
             </select>
           </div>
 

@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Order, OrderStatus, STATUS_MAP, CatalogueItem, CustomerReview } from './types';
+import { Order, OrderStatus, STATUS_MAP, CatalogueItem, CustomerReview, BOUTIQUE_BRANCHES } from './types';
 import { INITIAL_ORDERS, INITIAL_CATALOGUE, INITIAL_REVIEWS } from './initialData';
 import { playNewOrderSound } from './utils/sound';
 import { 
@@ -2216,10 +2216,9 @@ export default function App() {
                     name="staffBranch"
                     className="w-full px-4 py-3 rounded-xl border border-natural-wheat text-sm focus:outline-none focus:ring-2 focus:ring-natural-clay/20 focus:border-natural-clay bg-natural-cream/20 text-natural-espresso font-medium"
                   >
-                    <option value="สาขานราธิวาส">สาขานราธิวาส</option>
-                    <option value="สาขายะลา">สาขายะลา</option>
-                    <option value="สาขาปัตตานี">สาขาปัตตานี</option>
-                    <option value="สาขาหาดใหญ่">สาขาหาดใหญ่</option>
+                    {BOUTIQUE_BRANCHES.map((b) => (
+                      <option key={b} value={b}>{b}</option>
+                    ))}
                     <option value="สาขาหลัก (HQ)">สาขาหลัก (HQ)</option>
                   </select>
                 </div>

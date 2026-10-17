@@ -4,7 +4,7 @@
  */
 
 import React, { useState } from 'react';
-import { Order, OrderStatus } from '../types';
+import { Order, OrderStatus, BOUTIQUE_BRANCHES } from '../types';
 import { 
   ShoppingBag, 
   Hourglass, 
@@ -40,7 +40,7 @@ export default function DashboardStats({ orders, onSelectTab }: DashboardStatsPr
   };
 
   // สร้างรายชื่อสาขาทั้งหมดที่มีในระบบ
-  const knownBranches = ['สาขานราธิวาส', 'สาขายะลา', 'สาขาปัตตานี', 'สาขาหาดใหญ่'];
+  const knownBranches = [...BOUTIQUE_BRANCHES];
   const safeOrdersList = (orders || []).filter(Boolean);
   const allBranches = Array.from(
     new Set([

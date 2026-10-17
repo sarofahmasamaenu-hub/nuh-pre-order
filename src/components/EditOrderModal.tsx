@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Order, OrderStatus, Measurements, STATUS_MAP, STANDARD_SIZE_CHART, PRODUCTION_PIPELINE_STEPS } from '../types';
+import { Order, OrderStatus, Measurements, STATUS_MAP, STANDARD_SIZE_CHART, PRODUCTION_PIPELINE_STEPS, BOUTIQUE_BRANCHES } from '../types';
 import { X, Save, User, Sparkles, Ruler, CreditCard, Image as ImageIcon, UploadCloud, Check, Lock, ShieldCheck, Scissors } from 'lucide-react';
 import { INITIAL_CATALOGUE } from '../initialData';
 import { compressImage } from '../utils/image';
@@ -326,8 +326,8 @@ export default function EditOrderModal({ order, onClose, onSave }: EditOrderModa
               <div className="grid grid-cols-2 gap-3">
                 <div className="col-span-2">
                   <label className="block text-xs font-semibold text-natural-espresso/70 mb-1">สาขาที่รับออเดอร์ <span className="text-red-500">*</span></label>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                    {['สาขานราธิวาส', 'สาขายะลา', 'สาขาปัตตานี', 'สาขาหาดใหญ่'].map((b) => (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+                    {BOUTIQUE_BRANCHES.map((b) => (
                       <button
                         key={b}
                         type="button"

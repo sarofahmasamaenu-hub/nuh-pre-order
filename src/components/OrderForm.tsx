@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Order, OrderStatus, STATUS_MAP, Measurements, CatalogueItem, STANDARD_SIZE_CHART, PRODUCTION_PIPELINE_STEPS } from '../types';
+import { Order, OrderStatus, STATUS_MAP, Measurements, CatalogueItem, STANDARD_SIZE_CHART, PRODUCTION_PIPELINE_STEPS, BOUTIQUE_BRANCHES } from '../types';
 import { Save, User, Sparkles, Ruler, CreditCard, ChevronRight, Check, Image as ImageIcon, UploadCloud, X, History, Database, MessageSquare, PenTool, Eraser, ShieldCheck, Lock, Scissors } from 'lucide-react';
 import { compressImage } from '../utils/image';
 
@@ -693,8 +693,8 @@ export default function OrderForm({
 
                 <div>
                   <label className="block text-xs font-medium text-natural-espresso/70 mb-1">สาขาที่รับออเดอร์ <span className="text-natural-clay">*</span></label>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                    {['สาขานราธิวาส', 'สาขายะลา', 'สาขาปัตตานี', 'สาขาหาดใหญ่'].map((b) => (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+                    {BOUTIQUE_BRANCHES.map((b) => (
                       <button
                         key={b}
                         type="button"
